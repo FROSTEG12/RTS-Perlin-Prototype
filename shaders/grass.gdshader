@@ -13,8 +13,8 @@ uniform vec2 cloud_wind_direction = vec2(0.91, 0.41);
 uniform float cloud_scale : hint_range(0.005, 0.2, 0.001) = 0.035;
 uniform float cloud_speed : hint_range(0.0, 2.0, 0.01) = 0.68;
 uniform float cloud_coverage : hint_range(0.0, 1.0, 0.01) = 0.47;
-uniform float cloud_shadow_strength : hint_range(0.0, 1.0, 0.01) = 0.46;
-uniform vec3 cloud_shadow_tint : source_color = vec3(0.38, 0.50, 0.55);
+uniform float cloud_shadow_strength : hint_range(0.0, 1.0, 0.01) = 0.76;
+uniform vec3 cloud_shadow_tint : source_color = vec3(0.24, 0.31, 0.35);
 
 varying vec3 world_position;
 
