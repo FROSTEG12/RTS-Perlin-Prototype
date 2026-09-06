@@ -18,7 +18,7 @@ var pathfinder := GridPathfinder.new()
 var is_generating := false
 
 
-func _process(_delta: float) -> void:
+func _update_cloud_camera_uniforms() -> void:
 	var cloud_material := cloud_overlay.material as ShaderMaterial
 	var viewport_size := get_viewport().get_visible_rect().size
 	var camera_basis := game_camera.global_transform.basis
@@ -31,6 +31,11 @@ func _process(_delta: float) -> void:
 
 
 func _ready() -> void:
+	# Camera input and edge clamping run during the frame. Update the world-space
+	# cloud projection only after that work, immediately before rendering, so the
+	# overlay never trails the camera by one frame at map boundaries.
+	RenderingServer.frame_pre_draw.connect(_update_cloud_camera_uniforms)
+	_update_cloud_camera_uniforms()
 	world_seed = int(Time.get_unix_time_from_system()) % 2_000_000_000
 	new_map_button.pressed.connect(_on_new_map_pressed)
 	generate_world()
