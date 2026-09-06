@@ -20,9 +20,7 @@ shader = ExtResource("6_low_clouds")
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_low_clouds"]
 material = SubResource("ShaderMaterial_low_clouds")
-size = Vector2(180, 180)
-subdivide_width = 8
-subdivide_depth = 8
+size = Vector2(360, 360)
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1

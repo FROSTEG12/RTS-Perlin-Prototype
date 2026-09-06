@@ -3,12 +3,12 @@ render_mode unshaded, cull_disabled, depth_draw_never, blend_mix, fog_disabled;
 
 #include "res://shaders/cloud_common.gdshaderinc"
 
-uniform float coverage : hint_range(0.0, 1.0) = 0.56;
+uniform float coverage : hint_range(0.0, 1.0) = 0.66;
 uniform float thickness : hint_range(1.0, 10.0) = 4.8;
 uniform float absorption : hint_range(0.1, 2.0) = 0.9;
 uniform vec2 cloud_wind_direction = vec2(0.91, 0.41);
 uniform float cloud_speed : hint_range(0.0, 2.0, 0.01) = 0.68;
-uniform float world_scale : hint_range(0.001, 0.2, 0.001) = 0.022;
+uniform float world_scale : hint_range(0.001, 0.2, 0.001) = 0.034;
 
 const int MARCH_STEPS = 8;
 
@@ -57,9 +57,6 @@ vec4 render_clouds(vec3 eye_direction, vec3 position, float time) {
 		cloud_color += transmittance * exp(height) * density * march_step;
 		alpha += (1.0 - step_transmittance) * (1.0 - alpha);
 		cloud_position += iterator;
-		if (alpha > 0.99) {
-			break;
-		}
 	}
 
 	vec2 wind = normalize(cloud_wind_direction);
@@ -88,7 +85,7 @@ void fragment() {
 	if (cloud.a < 0.008) {
 		discard;
 	}
-	ALBEDO = clamp(cloud.rgb, vec3(0.0), vec3(1.0));
+	ALBEDO = clamp(cloud.rgb / max(cloud.a, 0.001), vec3(0.0), vec3(1.0));
 	EMISSION = ALBEDO * 0.08;
 	ALPHA = cloud.a;
 }

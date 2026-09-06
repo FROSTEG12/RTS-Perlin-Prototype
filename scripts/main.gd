@@ -8,6 +8,7 @@ const DEFAULT_RESOURCE_DENSITY := 130
 @onready var map_renderer: MapRenderer3D = $MapRenderer
 @onready var test_unit: TestUnit3D = $MapRenderer/TestUnit
 @onready var game_camera: IsometricGameCamera = $GameCamera
+@onready var low_cloud_layer: MeshInstance3D = $LowCloudLayer
 @onready var new_map_button: Button = $UI/MapControls/Margin/Rows/NewMapButton
 @onready var seed_label: Label = $UI/MapControls/Margin/Rows/SeedLabel
 
@@ -15,6 +16,14 @@ var world_seed: int
 var current_cells := PackedByteArray()
 var pathfinder := GridPathfinder.new()
 var is_generating := false
+
+
+func _process(_delta: float) -> void:
+	# Keep the finite ray-march carrier beneath the orthographic camera. The
+	# shader samples world coordinates, so moving this mesh does not move or
+	# restart the actual cloud field.
+	low_cloud_layer.position.x = game_camera.position.x
+	low_cloud_layer.position.z = game_camera.position.z
 
 
 func _ready() -> void:
