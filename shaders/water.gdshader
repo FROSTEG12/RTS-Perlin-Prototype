@@ -63,13 +63,10 @@ uniform float wind_streak_density : hint_range(0.1, 20.0, 0.1) = 13.0;
 uniform float shore_wave_speed : hint_range(0.0, 1.0, 0.01) = 0.10;
 uniform float shore_wave_frequency : hint_range(1.0, 40.0, 0.5) = 16.0;
 uniform vec2 cloud_wind_direction = vec2(0.91, 0.41);
-uniform float high_cloud_scale : hint_range(0.005, 0.2, 0.001) = 0.018;
-uniform float high_cloud_speed : hint_range(0.0, 2.0, 0.01) = 0.18;
-uniform float high_cloud_coverage : hint_range(0.0, 1.0, 0.01) = 0.68;
-uniform float low_cloud_scale : hint_range(0.005, 0.2, 0.001) = 0.085;
-uniform float low_cloud_speed : hint_range(0.0, 2.0, 0.01) = 0.72;
-uniform float low_cloud_coverage : hint_range(0.0, 1.0, 0.01) = 0.75;
-uniform float cloud_shadow_strength : hint_range(0.0, 1.0, 0.01) = 0.72;
+uniform float cloud_shadow_scale : hint_range(0.005, 0.2, 0.001) = 0.095;
+uniform float cloud_shadow_speed : hint_range(0.0, 2.0, 0.01) = 0.24;
+uniform float cloud_shadow_coverage : hint_range(0.0, 1.0, 0.01) = 0.65;
+uniform float cloud_shadow_strength : hint_range(0.0, 1.0, 0.01) = 0.84;
 uniform vec3 cloud_shadow_tint : source_color = vec3(0.22, 0.31, 0.36);
 
 varying vec3 world_vert;
@@ -339,15 +336,10 @@ void fragment() {
 	// orthographic zoom level without flattening the real lighting.
 	float slope_readability = smoothstep(0.008, 0.052, length(vertex_normal_world.xz));
 	ALBEDO += vec3(0.010, 0.026, 0.032) * slope_readability;
-	float high_cloud_shadow = projected_cloud_density(
+	float cloud_shadow = projected_cloud_density(
 		world_vert.xz, TIME, cloud_wind_direction,
-		high_cloud_scale, high_cloud_speed, high_cloud_coverage, 24.0, 5.0
+		cloud_shadow_scale, cloud_shadow_speed, cloud_shadow_coverage
 	);
-	float low_cloud_shadow = projected_cloud_density(
-		world_vert.xz, TIME, cloud_wind_direction,
-		low_cloud_scale, low_cloud_speed, low_cloud_coverage, 11.0, 1.4
-	);
-	float cloud_shadow = max(high_cloud_shadow, low_cloud_shadow * 0.08);
 	ALBEDO *= mix(vec3(1.0), cloud_shadow_tint, cloud_shadow * cloud_shadow_strength);
 
 	vec2 wind = normalize(wind_direction);

@@ -1,22 +1,18 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource path="res://scripts/main.gd" type="Script" id="1_main"]
 [ext_resource path="res://scripts/map_renderer.gd" type="Script" id="2_renderer"]
 [ext_resource path="res://scripts/game_camera.gd" type="Script" id="3_camera"]
 [ext_resource path="res://scripts/test_unit.gd" type="Script" id="4_unit"]
-[ext_resource path="res://shaders/sky_clouds.gdshader" type="Shader" id="5_sky"]
-[ext_resource path="res://shaders/low_clouds.gdshader" type="Shader" id="6_low_clouds"]
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_cloud_sky"]
-shader = ExtResource("5_sky")
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_clear"]
+sky_top_color = Color(0.055, 0.18, 0.34, 1)
+sky_horizon_color = Color(0.36, 0.61, 0.73, 1)
+ground_bottom_color = Color(0.018, 0.045, 0.052, 1)
+ground_horizon_color = Color(0.24, 0.36, 0.39, 1)
 
 [sub_resource type="Sky" id="Sky_water"]
-sky_material = SubResource("ShaderMaterial_cloud_sky")
+sky_material = SubResource("ProceduralSkyMaterial_clear")
 radiance_size = 3
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_low_clouds"]
-render_priority = 4
-shader = ExtResource("6_low_clouds")
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
@@ -81,21 +77,7 @@ near = 0.05
 far = 180.0
 script = ExtResource("3_camera")
 
-[node name="CloudCanvas" type="CanvasLayer" parent="."]
-layer = 1
-
-[node name="CloudOverlay" type="ColorRect" parent="CloudCanvas"]
-material = SubResource("ShaderMaterial_low_clouds")
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-color = Color(1, 1, 1, 1)
-
 [node name="UI" type="CanvasLayer" parent="."]
-layer = 2
 
 [node name="MapControls" type="PanelContainer" parent="UI"]
 offset_left = 18.0
