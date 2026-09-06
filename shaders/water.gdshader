@@ -63,6 +63,7 @@ uniform float wind_streak_density : hint_range(0.1, 20.0, 0.1) = 13.0;
 uniform float shore_wave_speed : hint_range(0.0, 1.0, 0.01) = 0.10;
 uniform float shore_wave_frequency : hint_range(1.0, 40.0, 0.5) = 16.0;
 uniform vec2 cloud_wind_direction = vec2(0.91, 0.41);
+uniform vec2 cloud_shadow_offset = vec2(0.0);
 uniform float cloud_shadow_scale : hint_range(0.005, 0.2, 0.001) = 0.085;
 uniform float cloud_shadow_speed : hint_range(0.0, 2.0, 0.01) = 0.18;
 uniform float cloud_shadow_coverage : hint_range(0.0, 1.0, 0.01) = 0.64;
@@ -337,7 +338,7 @@ void fragment() {
 	float slope_readability = smoothstep(0.008, 0.052, length(vertex_normal_world.xz));
 	ALBEDO += vec3(0.010, 0.026, 0.032) * slope_readability;
 	float cloud_shadow = projected_cloud_density(
-		world_vert.xz, TIME, cloud_wind_direction,
+		world_vert.xz + cloud_shadow_offset, TIME, cloud_wind_direction,
 		cloud_shadow_scale, cloud_shadow_speed, cloud_shadow_coverage
 	);
 	ALBEDO *= mix(vec3(1.0), cloud_shadow_tint, cloud_shadow * cloud_shadow_strength);

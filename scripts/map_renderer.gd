@@ -29,6 +29,7 @@ var visual_land_depths := PackedFloat32Array()
 var generated_seabed_depths := PackedFloat32Array()
 var depth_field_resolution := 1
 var water_depth_texture: ImageTexture
+var terrain_material: ShaderMaterial
 var water_material: ShaderMaterial
 
 @onready var terrain: MeshInstance3D = $Terrain
@@ -85,14 +86,21 @@ func get_half_extent() -> float:
 	return map_size * CELL_SIZE * 0.5
 
 
+func set_cloud_shadow_offset(offset: Vector2) -> void:
+	if terrain_material != null:
+		terrain_material.set_shader_parameter("cloud_shadow_offset", offset)
+	if water_material != null:
+		water_material.set_shader_parameter("cloud_shadow_offset", offset)
+
+
 func _build_terrain() -> void:
 	terrain.mesh = _build_continuous_ground_mesh()
-	var material := ShaderMaterial.new()
-	material.shader = GRASS_SHADER
-	material.set_shader_parameter("grass_texture", GRASS_TEXTURE)
-	material.set_shader_parameter("shore_distance_texture", water_depth_texture)
-	material.set_shader_parameter("map_world_size", map_size * CELL_SIZE)
-	terrain.material_override = material
+	terrain_material = ShaderMaterial.new()
+	terrain_material.shader = GRASS_SHADER
+	terrain_material.set_shader_parameter("grass_texture", GRASS_TEXTURE)
+	terrain_material.set_shader_parameter("shore_distance_texture", water_depth_texture)
+	terrain_material.set_shader_parameter("map_world_size", map_size * CELL_SIZE)
+	terrain.material_override = terrain_material
 
 
 func _build_continuous_ground_mesh() -> ArrayMesh:

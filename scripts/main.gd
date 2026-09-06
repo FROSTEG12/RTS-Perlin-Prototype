@@ -32,6 +32,12 @@ func generate_world() -> void:
 	current_cells = map_data["cells"]
 	pathfinder.setup(current_cells, DEFAULT_MAP_SIZE)
 	map_renderer.set_world(current_cells, DEFAULT_MAP_SIZE, generated_resources, map_data["bathymetry"])
+	var cloud_random := RandomNumberGenerator.new()
+	cloud_random.seed = world_seed ^ 0x5A17C9E3
+	map_renderer.set_cloud_shadow_offset(Vector2(
+		cloud_random.randf_range(-10_000.0, 10_000.0),
+		cloud_random.randf_range(-10_000.0, 10_000.0)
+	))
 	game_camera.configure_map(map_renderer.get_half_extent())
 	var spawn_cell := generator.find_mainland_spawn(current_cells, DEFAULT_MAP_SIZE)
 	test_unit.place_on_cell(spawn_cell, map_renderer.cell_to_world(spawn_cell.x, spawn_cell.y))
