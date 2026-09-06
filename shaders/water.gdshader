@@ -271,6 +271,9 @@ void fragment() {
 	// seabed colour underneath it.
 	screen_color = mix(vec3(0.24, 0.38, 0.32), screen_color, 0.62);
 	thickness = max(0.0, distorted_background_depth - water_linear_depth);
+	// Preserve the real scene intersection before switching to generated
+	// bathymetry for stable volume colour. Foam needs this exact contact depth.
+	float scene_thickness = thickness;
 
 	// DEPTH_TEXTURE still drives refraction and intersection rejection above.
 	// Compatibility depth loses too much precision for a steep orthographic
@@ -353,8 +356,12 @@ void fragment() {
 	float land_depth = texture(map_depth_texture, map_uv).g;
 	float contact_distance = max(map_depth, land_depth);
 	float contact_width_phase = sin(TIME * 0.28 + noise(world_vert.xz * 0.07) * 1.6) * 0.5 + 0.5;
-	float contact_width = mix(0.010, 0.017, contact_width_phase);
-	float contact_level = 1.0 - smoothstep(0.001, contact_width, contact_distance);
+	float physical_contact_width = mix(0.10, 0.22, contact_width_phase);
+	float physical_contact = 1.0 - smoothstep(0.015, physical_contact_width, scene_thickness);
+	// The depth buffer also reads zero above dry land. The generated distance is
+	// therefore only a broad guard; it no longer decides where the foam line is.
+	float generated_coast_guard = 1.0 - smoothstep(0.020, 0.055, contact_distance);
+	float contact_level = physical_contact * generated_coast_guard;
 	float contact_patch_noise = noise(world_vert.xz * 0.18 + shore_tangent * TIME * 0.018) * 0.5 + 0.5;
 	float contact_patchiness = mix(0.56, 0.86, smoothstep(0.34, 0.66, contact_patch_noise));
 	float fine_contact_level = contact_level * contact_patchiness;
