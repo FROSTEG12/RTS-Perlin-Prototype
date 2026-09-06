@@ -7,6 +7,7 @@ const WATER_Y := -0.16
 const MAX_SEABED_DEPTH := 2.2
 const COAST_SUBDIVISIONS := 4
 const SEABED_SUBDIVISIONS := 6
+const GROUND_SUBDIVISIONS := 10
 const COAST_THRESHOLD := 0.5
 const WATER_SHADER := preload("res://shaders/water.gdshader")
 const GRASS_SHADER := preload("res://shaders/grass.gdshader")
@@ -99,9 +100,9 @@ func _build_continuous_ground_mesh() -> ArrayMesh:
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var indices := PackedInt32Array()
-	var fine_size := map_size * SEABED_SUBDIVISIONS
+	var fine_size := map_size * GROUND_SUBDIVISIONS
 	var row_size := fine_size + 1
-	var step := CELL_SIZE / SEABED_SUBDIVISIONS
+	var step := CELL_SIZE / GROUND_SUBDIVISIONS
 	var map_min := -map_size * CELL_SIZE * 0.5
 	var heights := PackedFloat32Array()
 	heights.resize(row_size * row_size)
