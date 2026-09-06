@@ -372,6 +372,22 @@ void fragment() {
 	ALBEDO = mix(ALBEDO, foam_edge_color, shore_edge_foam);
 	ALBEDO = mix(ALBEDO, foam_color, shore_white_foam);
 
+	// Fine residual lace left by a receding wave. It straddles the exact
+	// water/sand boundary, appears only in sparse shoreline patches and slowly
+	// breathes in and out instead of forming a permanent white outline.
+	float land_depth = texture(map_depth_texture, map_uv).g;
+	float contact_distance = max(map_depth, land_depth);
+	float contact_lace = 1.0 - smoothstep(0.0015, 0.020, contact_distance);
+	float lace_patch_noise = noise(world_vert.xz * 0.19 - wind * TIME * 0.006) * 0.5 + 0.5;
+	float lace_patches = smoothstep(0.54, 0.72, lace_patch_noise);
+	float lace_phase_offset = noise(world_vert.xz * 0.075 + vec2(28.0, -11.0)) * 3.14159;
+	float lace_cycle = sin(TIME * 0.38 + lace_phase_offset) * 0.5 + 0.5;
+	lace_cycle = smoothstep(0.34, 0.70, lace_cycle);
+	float lace_detail = fbm_voronoi(world_vert.xz * 8.5 + warp * 0.18);
+	lace_detail = smoothstep(0.54, 0.73, lace_detail);
+	float beach_lace_foam = clamp(contact_lace * lace_patches * lace_cycle * lace_detail * 0.68, 0.0, 0.68);
+	ALBEDO = mix(ALBEDO, foam_thin_color, beach_lace_foam);
+
 	// Whitecaps have two wind-driven parts: bright breaking caps locked to high
 	// crests, and thinner residual foam advected into long streaks downwind.
 	float open_water_mask = smoothstep(0.10, 0.28, map_depth);
@@ -403,7 +419,7 @@ void fragment() {
 
 	// Foam scatters light instead of inheriting the dark water shading. A small
 	// emission term keeps it clean and pale outside the sun highlight as well.
-	float bright_foam = clamp(shore_white_foam + shore_edge_foam * 0.35 + open_water_foam, 0.0, 1.0);
+	float bright_foam = clamp(shore_white_foam + shore_edge_foam * 0.35 + beach_lace_foam * 0.42 + open_water_foam, 0.0, 1.0);
 	EMISSION += mix(foam_thin_color, foam_color, clamp(bright_foam * 1.6, 0.0, 1.0)) * bright_foam * 0.58;
 
 	ROUGHNESS = mix(roughness, 0.8, clamp(foam_mask_primary * bubble_alpha + foam_mask_shadow + open_water_foam, 0.0, 1.0));
