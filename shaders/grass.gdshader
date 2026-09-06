@@ -10,9 +10,12 @@ uniform float map_world_size = 104.0;
 uniform vec3 wet_sand_color : source_color = vec3(0.48, 0.38, 0.22);
 uniform vec3 dry_sand_color : source_color = vec3(0.76, 0.63, 0.38);
 uniform vec2 cloud_wind_direction = vec2(0.91, 0.41);
-uniform float cloud_scale : hint_range(0.005, 0.2, 0.001) = 0.034;
-uniform float cloud_speed : hint_range(0.0, 2.0, 0.01) = 0.68;
-uniform float cloud_coverage : hint_range(0.0, 1.0, 0.01) = 0.63;
+uniform float high_cloud_scale : hint_range(0.005, 0.2, 0.001) = 0.018;
+uniform float high_cloud_speed : hint_range(0.0, 2.0, 0.01) = 0.18;
+uniform float high_cloud_coverage : hint_range(0.0, 1.0, 0.01) = 0.68;
+uniform float low_cloud_scale : hint_range(0.005, 0.2, 0.001) = 0.085;
+uniform float low_cloud_speed : hint_range(0.0, 2.0, 0.01) = 0.72;
+uniform float low_cloud_coverage : hint_range(0.0, 1.0, 0.01) = 0.75;
 uniform float cloud_shadow_strength : hint_range(0.0, 1.0, 0.01) = 0.76;
 uniform vec3 cloud_shadow_tint : source_color = vec3(0.24, 0.31, 0.35);
 
@@ -58,10 +61,15 @@ void fragment() {
 	float irregular_transition = smoothstep(0.18, 0.82, sand_detail);
 	sand_to_grass = clamp(sand_to_grass + (irregular_transition - 0.5) * 0.18, 0.0, 1.0);
 	ALBEDO = mix(sand, grass, sand_to_grass);
-	float cloud_shadow = projected_cloud_density(
+	float high_cloud_shadow = projected_cloud_density(
 		world_position.xz, TIME, cloud_wind_direction,
-		cloud_scale, cloud_speed, cloud_coverage
+		high_cloud_scale, high_cloud_speed, high_cloud_coverage, 24.0, 5.0
 	);
+	float low_cloud_shadow = projected_cloud_density(
+		world_position.xz, TIME, cloud_wind_direction,
+		low_cloud_scale, low_cloud_speed, low_cloud_coverage, 11.0, 1.4
+	);
+	float cloud_shadow = max(high_cloud_shadow, low_cloud_shadow * 0.08);
 	ALBEDO *= mix(vec3(1.0), cloud_shadow_tint, cloud_shadow * cloud_shadow_strength);
 	ROUGHNESS = 0.94;
 	SPECULAR = 0.16;

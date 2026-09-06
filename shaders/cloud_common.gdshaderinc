@@ -48,7 +48,9 @@ float projected_cloud_density(
 	vec2 wind_direction,
 	float scale,
 	float speed,
-	float coverage
+	float coverage,
+	float layer_bottom,
+	float layer_thickness
 ) {
 	vec2 wind = normalize(wind_direction);
 	vec2 advected = world_position * scale - wind * time * speed * scale;
@@ -57,7 +59,11 @@ float projected_cloud_density(
 	float projected = 0.0;
 	for (int height_step = 0; height_step < 4; height_step++) {
 		float height = (float(height_step) + 0.5) / 4.0;
-		vec3 point = vec3(advected.x, (7.5 + height * 5.0) * scale, advected.y);
+		vec3 point = vec3(
+			advected.x,
+			(layer_bottom + height * layer_thickness) * scale,
+			advected.y
+		);
 		float density = cloud_fbm(point * 2.032);
 		projected += density * smoothstep(coverage, coverage + 0.035, density);
 	}

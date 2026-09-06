@@ -10,19 +10,29 @@ uniform vec3 camera_forward;
 uniform float ortho_size = 22.0;
 uniform float viewport_aspect = 1.7778;
 
-uniform float coverage : hint_range(0.0, 1.0, 0.01) = 0.63;
-uniform float cloud_bottom = 7.5;
-uniform float thickness : hint_range(1.0, 12.0, 0.1) = 5.0;
 uniform float absorption : hint_range(0.1, 2.0, 0.01) = 0.82;
 uniform vec2 cloud_wind_direction = vec2(0.91, 0.41);
-uniform float cloud_speed : hint_range(0.0, 2.0, 0.01) = 0.68;
-uniform float world_scale : hint_range(0.001, 0.2, 0.001) = 0.034;
-uniform float opacity : hint_range(0.0, 1.0, 0.01) = 0.82;
+
+// The high cloud deck is deliberately not rendered here. It only contributes
+// slow broad shadows in the terrain and water shaders. This is the sparse,
+// faster lower deck which the player can actually see.
+uniform float visible_cloud_bottom = 11.0;
+uniform float visible_cloud_thickness : hint_range(0.5, 4.0, 0.1) = 1.4;
+uniform float visible_cloud_coverage : hint_range(0.0, 1.0, 0.01) = 0.75;
+uniform float visible_cloud_scale : hint_range(0.001, 0.2, 0.001) = 0.085;
+uniform float visible_cloud_speed : hint_range(0.0, 2.0, 0.01) = 0.72;
+uniform float visible_cloud_opacity : hint_range(0.0, 1.0, 0.01) = 0.62;
 
 const int MARCH_STEPS = 8;
 
 
-float density_func(vec3 position, float time) {
+float density_func(
+	vec3 position,
+	float time,
+	float world_scale,
+	float cloud_speed,
+	float coverage
+) {
 	vec2 wind = normalize(cloud_wind_direction);
 	vec3 point = position * world_scale;
 	point.xz -= wind * time * cloud_speed * world_scale;
@@ -32,7 +42,17 @@ float density_func(vec3 position, float time) {
 }
 
 
-vec4 render_clouds(vec3 ray_origin, vec3 eye_direction, float time) {
+vec4 render_cloud_layer(
+	vec3 ray_origin,
+	vec3 eye_direction,
+	float time,
+	float cloud_bottom,
+	float thickness,
+	float coverage,
+	float world_scale,
+	float cloud_speed,
+	float opacity
+) {
 	float cloud_top = cloud_bottom + thickness;
 	if (eye_direction.y >= -0.0001 || ray_origin.y <= cloud_bottom) {
 		return vec4(0.0);
@@ -56,7 +76,7 @@ vec4 render_clouds(vec3 ray_origin, vec3 eye_direction, float time) {
 
 	for (int step_index = 0; step_index < MARCH_STEPS; step_index++) {
 		float height = clamp((cloud_position.y - cloud_bottom) / thickness, 0.0, 1.0);
-		float density = density_func(cloud_position, time);
+		float density = density_func(cloud_position, time, world_scale, cloud_speed, coverage);
 		float vertical_shape = smoothstep(0.0, 0.14, height) * (1.0 - smoothstep(0.78, 1.0, height));
 		density *= mix(0.38, 1.0, vertical_shape);
 		float step_transmittance = exp(-absorption * density * march_step);
@@ -92,7 +112,12 @@ void fragment() {
 	vec3 ray_origin = camera_position;
 	ray_origin += camera_right * centered_uv.x * ortho_size * viewport_aspect;
 	ray_origin -= camera_up * centered_uv.y * ortho_size;
-	vec4 cloud = render_clouds(ray_origin, normalize(camera_forward), TIME);
+	vec3 eye_direction = normalize(camera_forward);
+	vec4 cloud = render_cloud_layer(
+		ray_origin, eye_direction, TIME,
+		visible_cloud_bottom, visible_cloud_thickness, visible_cloud_coverage,
+		visible_cloud_scale, visible_cloud_speed, visible_cloud_opacity
+	);
 	if (cloud.a < 0.004) {
 		discard;
 	}
