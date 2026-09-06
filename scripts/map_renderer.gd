@@ -11,7 +11,9 @@ const GROUND_SUBDIVISIONS := 10
 const COAST_THRESHOLD := 0.5
 const WATER_SHADER := preload("res://shaders/water.gdshader")
 const GRASS_SHADER := preload("res://shaders/grass.gdshader")
+const TERRAIN_SHADOW_RECEIVER_SHADER := preload("res://shaders/terrain_shadow_receiver.gdshader")
 const GRASS_TEXTURE := preload("res://assets/tiles/grass_surface.png")
+const TREE_RESOURCES := preload("res://scripts/tree_resources.gd")
 const CAUSTICS_TEXTURE := preload("res://assets/water/caustics_pack/caustics/caust00.png")
 
 const RESOURCE_COLORS := {
@@ -30,9 +32,11 @@ var generated_seabed_depths := PackedFloat32Array()
 var depth_field_resolution := 1
 var water_depth_texture: ImageTexture
 var terrain_material: ShaderMaterial
+var terrain_shadow_receiver_material: ShaderMaterial
 var water_material: ShaderMaterial
 
 @onready var terrain: MeshInstance3D = $Terrain
+@onready var terrain_shadow_receiver: MeshInstance3D = $TerrainShadowReceiver
 @onready var seabed: MeshInstance3D = $Seabed
 @onready var water: MeshInstance3D = $Water
 @onready var resource_root: Node3D = $Resources
@@ -101,6 +105,11 @@ func _build_terrain() -> void:
 	terrain_material.set_shader_parameter("shore_distance_texture", water_depth_texture)
 	terrain_material.set_shader_parameter("map_world_size", map_size * CELL_SIZE)
 	terrain.material_override = terrain_material
+	terrain_shadow_receiver.mesh = terrain.mesh
+	terrain_shadow_receiver_material = ShaderMaterial.new()
+	terrain_shadow_receiver_material.shader = TERRAIN_SHADOW_RECEIVER_SHADER
+	terrain_shadow_receiver_material.render_priority = 1
+	terrain_shadow_receiver.material_override = terrain_shadow_receiver_material
 
 
 func _build_continuous_ground_mesh() -> ArrayMesh:
@@ -400,8 +409,14 @@ func _build_resources() -> void:
 		var positions: Array[Vector3] = []
 		for resource in resources:
 			if resource["kind"] == kind:
-				positions.append(cell_to_world(int(resource["x"]), int(resource["y"])))
+				var position := cell_to_world(int(resource["x"]), int(resource["y"]))
+				if kind == "tree":
+					position += Vector3(float(resource.get("offset_x", 0.0)), 0.0, float(resource.get("offset_y", 0.0)))
+				positions.append(position)
 		if positions.is_empty():
+			continue
+		if kind == "tree":
+			TREE_RESOURCES.build(self, positions)
 			continue
 		var marker_mesh := CylinderMesh.new()
 		marker_mesh.top_radius = 0.10 if kind != "tree" else 0.13

@@ -4,6 +4,10 @@ extends RefCounted
 const RESOURCE_BASELINE_SIZE := 72
 const BATHYMETRY_RESOLUTION := 6
 const BATHYMETRY_MAX_DEPTH := 2.2
+# Forest coverage and stem density are separate: dense woods, open meadows.
+const FOREST_COVERAGE := 0.62
+const FOREST_STEM_SPACING := 0.92
+const FOREST_JITTER := 0.22
 const RESOURCE_RULES: Array[Dictionary] = [
 	{"kind": "iron", "base_count": 7, "spacing": 7.0, "field_scale": 15.0, "salt": 7919},
 	{"kind": "stone", "base_count": 13, "spacing": 5.0, "field_scale": 12.0, "salt": 5051},
@@ -343,11 +347,22 @@ func _generate_forest(cells: PackedByteArray, map_size: int, seed_value: int, de
 	var warp_permutation := _make_permutation(seed_value ^ 4243)
 	var random := RandomNumberGenerator.new()
 	random.seed = seed_value ^ 991
-	var threshold := 0.055 - (density - 100) * 0.0017
 	var candidates: Array[Dictionary] = []
+	var scores: Array[float] = []
+	if density <= 0:
+		return []
+	var spawn := Vector2(find_mainland_spawn(cells, map_size))
 	for y in range(1, map_size - 1):
 		for x in range(1, map_size - 1):
 			if cells[y * map_size + x] == 1:
+				continue
+			# Keep trunks off the smooth beach and out of narrow coastal strips.
+			var coastal := false
+			for oy in range(-1, 2):
+				for ox in range(-1, 2):
+					if cells[(y + oy) * map_size + x + ox] == 1:
+						coastal = true
+			if coastal:
 				continue
 			var warp_x := _perlin(x / 24.0 + 17.0, y / 24.0 - 9.0, warp_permutation) * 10.0
 			var warp_y := _perlin(x / 24.0 - 31.0, y / 24.0 + 23.0, warp_permutation) * 10.0
@@ -357,22 +372,49 @@ func _generate_forest(cells: PackedByteArray, map_size: int, seed_value: int, de
 			var belt := _fractal_noise(world_x / 34.0 - 11.0, world_y / 8.0 + 29.0, macro_permutation)
 			var edge := _fractal_noise(x / 6.0 + 73.0, y / 6.0 - 47.0, detail_permutation)
 			var clearing := _fractal_noise(x / 10.0 - 59.0, y / 10.0 + 83.0, detail_permutation)
-			var clearing_cut := (clearing - 0.25) * 1.35 if clearing > 0.25 else 0.0
+			var clearing_cut := maxf(0.0, clearing - 0.12) * 1.6
 			var score := massif * 0.78 + belt * 0.34 + edge * 0.16 - clearing_cut
-			if score <= threshold:
-				continue
-			var chance := minf(0.88, 0.24 + (score - threshold) * 2.4)
-			candidates.append({"x": x, "y": y, "score": score + random.randf() * 0.012, "chance": chance})
-	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["score"]) > float(b["score"]))
+			scores.append(score)
+			candidates.append({"x": x, "y": y, "score": score})
+	if candidates.is_empty():
+		return []
+	# A land-relative percentile keeps different seeds consistently wooded.
+	# The spatial noise still defines the shapes, rather than random scatter.
+	scores.sort()
+	var coverage := clampf(FOREST_COVERAGE + (density - 130) * 0.002, 0.15, 0.82)
+	var threshold := scores[clampi(int(scores.size() * (1.0 - coverage)), 0, scores.size() - 1)]
+	# Shuffle with the local seeded RNG (Array.shuffle uses global state).
+	for index in range(candidates.size() - 1, 0, -1):
+		var other := random.randi_range(0, index)
+		var temporary: Dictionary = candidates[index]
+		candidates[index] = candidates[other]
+		candidates[other] = temporary
 	var trees: Array[Dictionary] = []
+	var stem_grid := {}
 	for candidate in candidates:
-		if random.randf() > float(candidate["chance"]):
+		var forest_amount := smoothstep(threshold - 0.035, threshold + 0.065, float(candidate["score"]))
+		var chance := lerpf(0.008, 0.97, forest_amount)
+		var point := Vector2(candidate["x"], candidate["y"])
+		chance *= smoothstep(3.5, 6.0, point.distance_to(spawn))
+		if random.randf() > chance:
 			continue
-		if not _far_from_all(candidate, occupied, 2.25):
+		# Deposits stay accessible without punching huge holes in every grove.
+		if not _far_from_all(candidate, occupied, 1.4):
 			continue
-		if not _far_from_all(candidate, trees, 1.45):
+		var offset := Vector2(random.randf_range(-FOREST_JITTER, FOREST_JITTER), random.randf_range(-FOREST_JITTER, FOREST_JITTER))
+		var stem := point + offset
+		var cell := Vector2i(point)
+		var clear := true
+		# Only nine local cells instead of scanning every previously placed tree.
+		for oy in range(-1, 2):
+			for ox in range(-1, 2):
+				var neighbor := cell + Vector2i(ox, oy)
+				if stem_grid.has(neighbor) and stem.distance_squared_to(stem_grid[neighbor]) < FOREST_STEM_SPACING * FOREST_STEM_SPACING:
+					clear = false
+		if not clear:
 			continue
-		trees.append({"x": candidate["x"], "y": candidate["y"], "kind": "tree"})
+		stem_grid[cell] = stem
+		trees.append({"x": candidate["x"], "y": candidate["y"], "kind": "tree", "offset_x": offset.x, "offset_y": offset.y})
 	return trees
 
 

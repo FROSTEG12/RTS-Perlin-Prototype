@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode cull_disabled, unshaded;
+render_mode cull_disabled;
 
 #include "res://shaders/cloud_common.gdshaderinc"
 
@@ -7,8 +7,8 @@ uniform sampler2D grass_texture : repeat_enable, filter_nearest;
 uniform sampler2D shore_distance_texture : filter_linear, repeat_disable;
 uniform float texture_scale = 0.095;
 uniform float map_world_size = 104.0;
-uniform vec3 wet_sand_color : source_color = vec3(0.48, 0.38, 0.22);
-uniform vec3 dry_sand_color : source_color = vec3(0.76, 0.63, 0.38);
+uniform vec3 wet_sand_color : source_color = vec3(0.69, 0.63, 0.49);
+uniform vec3 dry_sand_color : source_color = vec3(0.88, 0.82, 0.67);
 uniform vec2 cloud_wind_direction = vec2(0.91, 0.41);
 uniform vec2 cloud_shadow_offset = vec2(0.0);
 uniform float cloud_shadow_scale : hint_range(0.005, 0.2, 0.001) = 0.085;

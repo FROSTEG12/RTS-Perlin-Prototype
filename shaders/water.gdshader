@@ -324,7 +324,7 @@ void fragment() {
 	// At the contact line the water column is optically thin: reveal the wet
 	// sand first, then introduce the water tint continuously across the shelf.
 	float shore_volume_presence = smoothstep(0.035, 0.16, thickness);
-	vec3 submerged_sand = mix(vec3(0.48, 0.38, 0.22), raw_screen_color, 0.30);
+	vec3 submerged_sand = mix(vec3(0.62, 0.56, 0.42), raw_screen_color, 0.30);
 	ALBEDO = mix(submerged_sand, ALBEDO, shore_volume_presence);
 	float normalized_wave_height = clamp(wave_height / max(0.001, sea_height * 2.45), 0.0, 1.0);
 	ALBEDO *= mix(0.88, 1.10, normalized_wave_height);

@@ -1,27 +1,25 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource path="res://scripts/main.gd" type="Script" id="1_main"]
 [ext_resource path="res://scripts/map_renderer.gd" type="Script" id="2_renderer"]
 [ext_resource path="res://scripts/game_camera.gd" type="Script" id="3_camera"]
 [ext_resource path="res://scripts/test_unit.gd" type="Script" id="4_unit"]
-[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_clear"]
-sky_top_color = Color(0.055, 0.18, 0.34, 1)
-sky_horizon_color = Color(0.36, 0.61, 0.73, 1)
-ground_bottom_color = Color(0.018, 0.045, 0.052, 1)
-ground_horizon_color = Color(0.24, 0.36, 0.39, 1)
+[ext_resource path="res://Compositor/Color grading/ColorGrading.gd" type="Script" id="5_grade"]
 
-[sub_resource type="Sky" id="Sky_water"]
-sky_material = SubResource("ProceduralSkyMaterial_clear")
-radiance_size = 3
+[sub_resource type="CompositorEffect" id="ColorGrading_game"]
+script = ExtResource("5_grade")
+night_noise = 0.0
 
-[sub_resource type="Environment" id="Environment_main"]
+[sub_resource type="Compositor" id="Compositor_game"]
+compositor_effects = Array[CompositorEffect]([SubResource("ColorGrading_game")])
+
+[sub_resource type="Environment" id="Environment_day_night"]
 background_mode = 1
-background_color = Color(0.018, 0.045, 0.052, 1)
-sky = SubResource("Sky_water")
+background_color = Color(0.008, 0.014, 0.018, 1)
 ambient_light_source = 3
-ambient_light_color = Color(0.54, 0.68, 0.72, 1)
-ambient_light_energy = 0.82
-reflected_light_source = 2
+ambient_light_color = Color(0.62, 0.68, 0.72, 1)
+ambient_light_energy = 0.72
+reflected_light_source = 1
 tonemap_mode = 2
 
 [sub_resource type="CylinderMesh" id="Cylinder_unit"]
@@ -39,22 +37,37 @@ albedo_color = Color(0.02, 0.04, 0.035, 0.34)
 script = ExtResource("1_main")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
-environment = SubResource("Environment_main")
+environment = SubResource("Environment_day_night")
+compositor = SubResource("Compositor_game")
 
-[node name="Sun" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-58, -35, 0)
-light_color = Color(1, 0.91, 0.74, 1)
-light_energy = 0.92
-shadow_enabled = false
+[node name="KeyLight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-52, -35, 0)
+light_color = Color(1, 0.94, 0.84, 1)
+light_energy = 0.95
+shadow_enabled = true
+shadow_bias = 0.025
+shadow_normal_bias = 0.2
+shadow_opacity = 1.0
+shadow_blur = 1.2
+directional_shadow_mode = 1
+directional_shadow_split_1 = 0.5
+directional_shadow_blend_splits = true
 directional_shadow_max_distance = 80.0
 
 [node name="MapRenderer" type="Node3D" parent="."]
 script = ExtResource("2_renderer")
 
+[node name="TemporaryBuildings" type="Node3D" parent="."]
+
 [node name="Seabed" type="MeshInstance3D" parent="MapRenderer"]
 cast_shadow = 0
 
 [node name="Terrain" type="MeshInstance3D" parent="MapRenderer"]
+cast_shadow = 0
+
+[node name="TerrainShadowReceiver" type="MeshInstance3D" parent="MapRenderer"]
+position = Vector3(0, 0.003, 0)
+cast_shadow = 0
 
 [node name="Water" type="MeshInstance3D" parent="MapRenderer"]
 cast_shadow = 0
@@ -83,7 +96,7 @@ script = ExtResource("3_camera")
 offset_left = 18.0
 offset_top = 18.0
 offset_right = 228.0
-offset_bottom = 96.0
+offset_bottom = 189.0
 
 [node name="Margin" type="MarginContainer" parent="UI/MapControls"]
 theme_override_constants/margin_left = 12
@@ -100,8 +113,40 @@ mouse_default_cursor_shape = 2
 theme_override_font_sizes/font_size = 16
 text = "Новая карта"
 
+[node name="BuildingButton" type="Button" parent="UI/MapControls/Margin/Rows"]
+custom_minimum_size = Vector2(178, 30)
+mouse_default_cursor_shape = 2
+toggle_mode = true
+theme_override_font_sizes/font_size = 14
+text = "Поставить дом"
+
 [node name="SeedLabel" type="Label" parent="UI/MapControls/Margin/Rows"]
 theme_override_colors/font_color = Color(0.82, 0.9, 0.88, 1)
 theme_override_font_sizes/font_size = 12
 text = "Seed: —"
 horizontal_alignment = 1
+
+[node name="TimeLabel" type="Label" parent="UI/MapControls/Margin/Rows"]
+theme_override_colors/font_color = Color(0.92, 0.92, 0.82, 1)
+theme_override_font_sizes/font_size = 12
+text = "Время: 08:00"
+horizontal_alignment = 1
+
+[node name="TimeSlider" type="HSlider" parent="UI/MapControls/Margin/Rows"]
+custom_minimum_size = Vector2(178, 16)
+mouse_default_cursor_shape = 2
+max_value = 23.99
+step = 0.05
+value = 8.0
+
+[node name="ColorGradeToggle" type="CheckButton" parent="UI/MapControls/Margin/Rows"]
+button_pressed = true
+text = "Цветокоррекция"
+theme_override_font_sizes/font_size = 14
+
+[node name="ColorGradeStrength" type="HSlider" parent="UI/MapControls/Margin/Rows"]
+custom_minimum_size = Vector2(178, 16)
+max_value = 1.0
+step = 0.01
+value = 0.5
+tooltip_text = "Сила цветокоррекции"

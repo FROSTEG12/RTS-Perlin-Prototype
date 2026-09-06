@@ -78,8 +78,13 @@ func _move_on_ground(input: Vector2) -> void:
 
 
 func _clamp_position() -> void:
-	var margin := size * 0.35
-	var limit := maxf(0.0, map_half_extent - margin)
-	position.x = clampf(position.x, -limit, limit)
-	position.z = clampf(position.z, -limit, limit)
-	position.y = CAMERA_HEIGHT
+	global_position.y = CAMERA_HEIGHT
+	# Limit the ground point at screen center, not the elevated camera body.
+	# The isometric camera sits ~10.5 units away from its ground focus on X/Z.
+	# Shrinking the body bounds with zoom made the near corner unreachable.
+	var back := global_basis.z
+	if absf(back.y) < 0.0001:
+		return
+	var focus := global_position - back * (global_position.y / back.y)
+	global_position.x += clampf(focus.x, -map_half_extent, map_half_extent) - focus.x
+	global_position.z += clampf(focus.z, -map_half_extent, map_half_extent) - focus.z
