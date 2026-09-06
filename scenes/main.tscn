@@ -59,7 +59,7 @@ shadow_enabled = false
 directional_shadow_max_distance = 80.0
 
 [node name="LowCloudLayer" type="MeshInstance3D" parent="."]
-position = Vector3(0, 6.5, 0)
+position = Vector3(0, 9, 0)
 cast_shadow = 0
 mesh = SubResource("PlaneMesh_low_clouds")
 
