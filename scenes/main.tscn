@@ -51,12 +51,6 @@ light_energy = 0.92
 shadow_enabled = false
 directional_shadow_max_distance = 80.0
 
-[node name="FillLight" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-48, 145, 0)
-light_color = Color(0.43, 0.67, 0.82, 1)
-light_energy = 0.34
-shadow_enabled = false
-
 [node name="MapRenderer" type="Node3D" parent="."]
 script = ExtResource("2_renderer")
 

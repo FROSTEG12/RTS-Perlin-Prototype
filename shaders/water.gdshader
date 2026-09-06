@@ -39,20 +39,25 @@ uniform float caustics_speed : hint_range(0.0, 1.0, 0.01) = 0.10;
 uniform float caustics_intensity : hint_range(0.0, 2.0, 0.1) = 0.48;
 uniform float caustics_depth_fade : hint_range(0.0, 1.0, 0.01) = 0.62;
 
-uniform vec3 foam_color : source_color = vec3(0.43, 0.69, 0.67);
+uniform vec3 foam_color : source_color = vec3(0.96, 1.0, 0.98);
+uniform vec3 foam_thin_color : source_color = vec3(0.82, 0.96, 0.93);
 uniform vec3 shallow_surface_color : source_color = vec3(0.075, 0.39, 0.45);
 uniform vec3 deep_surface_color : source_color = vec3(0.025, 0.19, 0.29);
 uniform float foam_depth_start : hint_range(0.0, 5.0, 0.01) = 0.48;
 uniform float foam_depth_end : hint_range(0.0, 5.0, 0.01) = 0.06;
 uniform float foam_noise_scale : hint_range(0.0, 10.0, 0.01) = 3.2;
-uniform float foam_noise_speed : hint_range(0.0, 2.0, 0.01) = 0.72;
+uniform float foam_noise_speed : hint_range(0.0, 2.0, 0.01) = 0.18;
 uniform float foam_cutoff : hint_range(0.0, 1.0, 0.01) = 0.38;
 uniform float foam_crest_threshold : hint_range(0.0, 1.0, 0.01) = 0.74;
-uniform float foam_crest_amount : hint_range(0.0, 10.0, 0.1) = 0.08;
-uniform vec3 foam_edge_color : source_color = vec3(0.015, 0.10, 0.13);
+uniform float foam_crest_amount : hint_range(0.0, 10.0, 0.1) = 0.72;
+uniform vec3 foam_edge_color : source_color = vec3(0.34, 0.70, 0.72);
 uniform vec2 foam_edge_offset = vec2(0.035, 0.035);
 uniform float voronoi_scale : hint_range(0.0, 50.0) = 18.0;
 uniform float voronoi_strength : hint_range(0.0, 8.0) = 0.72;
+uniform vec2 wind_direction = vec2(0.91, 0.41);
+uniform float wind_foam_speed : hint_range(0.0, 3.0, 0.01) = 0.08;
+uniform float wind_streak_length : hint_range(0.1, 10.0, 0.1) = 0.62;
+uniform float wind_streak_density : hint_range(0.1, 20.0, 0.1) = 13.0;
 
 varying vec3 world_vert;
 varying float wave_height;
@@ -323,19 +328,45 @@ void fragment() {
 	float voronoi_value = 1.0 - sqrt(voronoi(world_vert.xz * voronoi_scale + warp));
 	voronoi_value = smoothstep(0.2, 0.8, voronoi_value);
 	float bubble_alpha = 1.0 - clamp((1.0 - voronoi_value) * voronoi_strength, 0.0, 1.0);
-	ALBEDO = mix(ALBEDO, foam_edge_color, foam_mask_shadow * 0.65);
-	ALBEDO = mix(ALBEDO, foam_color, foam_mask_primary * bubble_alpha * 0.40);
+	float shore_edge_foam = foam_mask_shadow * 0.25;
+	float shore_white_foam = foam_mask_primary * bubble_alpha * 0.86;
+	ALBEDO = mix(ALBEDO, foam_edge_color, shore_edge_foam);
+	ALBEDO = mix(ALBEDO, foam_color, shore_white_foam);
 
-	// Open-water foam appears only along high wave crests. Domain noise breaks
-	// it into short moving streaks instead of continuous white contour lines.
+	// Whitecaps have two wind-driven parts: bright breaking caps locked to high
+	// crests, and thinner residual foam advected into long streaks downwind.
 	float open_water_mask = smoothstep(0.10, 0.28, map_depth);
-	float crest_breakup = noise(world_vert.xz * 2.7 + vec2(TIME * 0.32, -TIME * 0.21));
-	crest_breakup = smoothstep(0.28, 0.72, crest_breakup);
-	float crest_foam_detail = fbm_voronoi(world_vert.xz * 8.5 + warp * 1.4);
-	crest_foam_detail = smoothstep(0.46, 0.68, crest_foam_detail);
+	vec2 wind = normalize(wind_direction);
+	vec2 across_wind = vec2(-wind.y, wind.x);
+	vec2 wind_space = vec2(dot(world_vert.xz, wind), dot(world_vert.xz, across_wind));
+	wind_space.x -= TIME * wind_foam_speed;
+	vec2 streak_uv = vec2(
+		wind_space.x * 2.6 - TIME * wind_foam_speed,
+		wind_space.y * 14.0
+	);
+	float wind_streak_cells = fbm_voronoi(streak_uv + warp * 0.34);
+	wind_streak_cells = smoothstep(0.71, 0.84, wind_streak_cells);
+	float streak_breakup = noise(vec2(wind_space.x * 1.55 - TIME * wind_foam_speed * 0.55, wind_space.y * 2.8) + vec2(0.0, 17.3));
+	streak_breakup = smoothstep(0.64, 0.80, streak_breakup * 0.5 + 0.5);
+	float crest_foam_detail = fbm_voronoi(vec2(wind_space.x * 14.0, wind_space.y * 22.0) + warp * 0.7);
+	crest_foam_detail = smoothstep(0.64, 0.79, crest_foam_detail);
 	float distance_visibility = clamp(camera_ortho_size / 22.0, 0.82, 1.45);
-	float open_water_foam = crest_band * crest_breakup * crest_foam_detail * open_water_mask * 0.20 * distance_visibility;
-	ALBEDO = mix(ALBEDO, foam_color, open_water_foam);
+	float downwind_slope = max(0.0, dot(vertex_normal_world.xz, wind));
+	float breaking_slope = smoothstep(0.010, 0.052, downwind_slope);
+	float high_wave_gate = smoothstep(0.42, 1.02, normalized_crest_height);
+	float breaking_raw = breaking_slope * high_wave_gate * crest_foam_detail * open_water_mask;
+	float breaking_caps = smoothstep(0.075, 0.24, breaking_raw) * foam_crest_amount;
+	float trailing_wave_zone = smoothstep(0.16, 0.55, normalized_crest_height) * (1.0 - smoothstep(1.90, 2.35, normalized_crest_height));
+	float residual_raw = trailing_wave_zone * wind_streak_cells * streak_breakup * open_water_mask;
+	float residual_streaks = smoothstep(0.10, 0.31, residual_raw) * 0.38;
+	float open_water_foam = clamp((breaking_caps + residual_streaks) * distance_visibility, 0.0, 0.72);
+	ALBEDO = mix(ALBEDO, foam_thin_color, clamp(residual_streaks * distance_visibility * 1.18, 0.0, 0.88));
+	ALBEDO = mix(ALBEDO, foam_color, breaking_caps * distance_visibility * 1.10);
+
+	// Foam scatters light instead of inheriting the dark water shading. A small
+	// emission term keeps it clean and pale outside the sun highlight as well.
+	float bright_foam = clamp(shore_white_foam + shore_edge_foam * 0.35 + open_water_foam, 0.0, 1.0);
+	EMISSION += mix(foam_thin_color, foam_color, clamp(bright_foam * 1.6, 0.0, 1.0)) * bright_foam * 0.58;
 
 	ROUGHNESS = mix(roughness, 0.8, clamp(foam_mask_primary * bubble_alpha + foam_mask_shadow + open_water_foam, 0.0, 1.0));
 	SPECULAR = specular;
