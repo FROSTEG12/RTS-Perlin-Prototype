@@ -4,12 +4,12 @@ render_mode unshaded, cull_disabled, depth_draw_never, blend_mix, fog_disabled;
 #include "res://shaders/cloud_common.gdshaderinc"
 
 uniform vec2 cloud_wind_direction = vec2(0.91, 0.41);
-uniform float cloud_scale : hint_range(0.005, 0.2, 0.001) = 0.035;
+uniform float cloud_scale : hint_range(0.005, 0.2, 0.001) = 0.046;
 uniform float cloud_speed : hint_range(0.0, 2.0, 0.01) = 0.68;
-uniform float visible_coverage : hint_range(0.0, 1.0, 0.01) = 0.61;
-uniform float cloud_opacity : hint_range(0.0, 1.0, 0.01) = 0.48;
+uniform float visible_coverage : hint_range(0.0, 1.0, 0.01) = 0.54;
+uniform float cloud_opacity : hint_range(0.0, 1.0, 0.01) = 0.82;
 uniform vec3 cloud_light_color : source_color = vec3(1.0, 0.97, 0.88);
-uniform vec3 cloud_shade_color : source_color = vec3(0.48, 0.58, 0.62);
+uniform vec3 cloud_shade_color : source_color = vec3(0.64, 0.70, 0.72);
 
 varying vec3 cloud_world_position;
 
@@ -33,6 +33,6 @@ void fragment() {
 	float soft_core = smoothstep(0.12, 0.88, density);
 	vec3 cloud_color = mix(cloud_shade_color, cloud_light_color, clamp(soft_core * 0.76 + wisps * 0.24, 0.0, 1.0));
 	ALBEDO = cloud_color;
-	EMISSION = cloud_color * 0.14;
-	ALPHA = density * cloud_opacity * mix(0.62, 1.0, soft_core);
+	EMISSION = cloud_color * 0.22;
+	ALPHA = density * cloud_opacity * mix(0.76, 1.0, soft_core);
 }

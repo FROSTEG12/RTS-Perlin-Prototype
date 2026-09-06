@@ -29,7 +29,13 @@ float cloud_fbm(vec3 point) {
 	float amplitude = 0.52;
 	for (int octave = 0; octave < 5; octave++) {
 		value += abs(cloud_noise(point)) * amplitude;
-		point *= 2.17;
+		// Rotate and offset every octave so the value-noise cell diagonals never
+		// stack into a large geometric edge in the final cloud silhouette.
+		point = vec3(
+			point.x * 0.80 + point.z * 0.60,
+			point.y * 0.86 + point.x * 0.32 - point.z * 0.18,
+			-point.x * 0.51 + point.y * 0.22 + point.z * 0.83
+		) * 2.17 + vec3(7.1, 3.7, 5.3);
 		amplitude *= 0.48;
 	}
 	return value;
