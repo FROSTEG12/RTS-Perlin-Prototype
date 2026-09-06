@@ -378,26 +378,29 @@ void fragment() {
 	// texture slides gently along the local shoreline instead of with the camera.
 	float land_depth = texture(map_depth_texture, map_uv).g;
 	float contact_distance = max(map_depth, land_depth);
+	float signed_shore_distance = map_depth - land_depth;
 	vec2 shore_tangent = vec2(-shore_gradient.y, shore_gradient.x);
 	float lace_phase_offset = noise(world_vert.xz * 0.075 + vec2(28.0, -11.0)) * 2.2;
 	float lace_wave = sin(TIME * 0.34 + lace_phase_offset);
 	float lace_travel = smoothstep(-0.92, 0.92, lace_wave);
-	float lace_front_depth = mix(0.0025, 0.030, lace_travel);
-	float lace_front_width = mix(0.006, 0.011, lace_travel);
+	// Slightly negative is the wet-sand side, positive is shallow water.
+	// Keep the excursion below one visible world unit to avoid a thick ribbon.
+	float lace_front_depth = mix(-0.0025, 0.010, lace_travel);
+	float lace_front_width = mix(0.0024, 0.0042, lace_travel);
 	float moving_lace_front = 1.0 - smoothstep(
-		lace_front_width * 0.34,
+		lace_front_width * 0.28,
 		lace_front_width,
-		abs(contact_distance - lace_front_depth)
+		abs(signed_shore_distance - lace_front_depth)
 	);
-	float contact_lace = moving_lace_front * (1.0 - smoothstep(0.030, 0.048, contact_distance));
+	float contact_lace = moving_lace_front * (1.0 - smoothstep(0.012, 0.020, contact_distance));
 	vec2 lace_flow = shore_tangent * TIME * 0.030 - wind * TIME * 0.010;
 	float lace_patch_noise = noise(world_vert.xz * 0.19 + lace_flow) * 0.5 + 0.5;
-	float lace_patches = smoothstep(0.43, 0.64, lace_patch_noise);
+	float lace_patches = smoothstep(0.48, 0.68, lace_patch_noise);
 	float lace_cycle = smoothstep(-0.96, -0.52, lace_wave) * (1.0 - smoothstep(0.72, 0.98, lace_wave));
-	float lace_detail = fbm_voronoi((world_vert.xz + lace_flow) * 8.5 + warp * 0.18);
-	lace_detail = smoothstep(0.44, 0.67, lace_detail);
-	float broken_lace_detail = mix(0.32, 1.0, lace_detail);
-	float beach_lace_foam = clamp(contact_lace * lace_patches * lace_cycle * broken_lace_detail * 0.82, 0.0, 0.78);
+	float lace_detail = fbm_voronoi((world_vert.xz + lace_flow) * 21.0 + warp * 0.24);
+	lace_detail = smoothstep(0.50, 0.72, lace_detail);
+	float broken_lace_detail = mix(0.06, 1.0, lace_detail);
+	float beach_lace_foam = clamp(contact_lace * lace_patches * lace_cycle * broken_lace_detail * 0.70, 0.0, 0.68);
 	ALBEDO = mix(ALBEDO, foam_thin_color, beach_lace_foam);
 
 	// Whitecaps have two wind-driven parts: bright breaking caps locked to high
