@@ -6,6 +6,7 @@ const LAND_Y := 0.0
 const WATER_Y := -0.16
 const MAX_SEABED_DEPTH := 2.2
 const COAST_SUBDIVISIONS := 4
+const SEABED_SUBDIVISIONS := 6
 const COAST_THRESHOLD := 0.5
 const WATER_SHADER := preload("res://shaders/water.gdshader")
 const GRASS_SHADER := preload("res://shaders/grass.gdshader")
@@ -22,7 +23,10 @@ const RESOURCE_COLORS := {
 var cells := PackedByteArray()
 var map_size := 0
 var resources: Array[Dictionary] = []
-var water_depths := PackedFloat32Array()
+var visual_water_depths := PackedFloat32Array()
+var visual_land_depths := PackedFloat32Array()
+var generated_seabed_depths := PackedFloat32Array()
+var depth_field_resolution := 1
 var water_depth_texture: ImageTexture
 var water_material: ShaderMaterial
 
@@ -40,11 +44,14 @@ func _process(_delta: float) -> void:
 		water_material.set_shader_parameter("camera_ortho_size", active_camera.size)
 
 
-func set_world(new_cells: PackedByteArray, new_size: int, new_resources: Array[Dictionary]) -> void:
+func set_world(new_cells: PackedByteArray, new_size: int, new_resources: Array[Dictionary], bathymetry: Dictionary) -> void:
 	cells = new_cells
 	map_size = new_size
 	resources = new_resources
-	water_depths = _build_water_depths()
+	depth_field_resolution = int(bathymetry["resolution"])
+	visual_water_depths = bathymetry["water_distance"]
+	visual_land_depths = bathymetry["land_distance"]
+	generated_seabed_depths = bathymetry["depth"]
 	water_depth_texture = _create_water_depth_texture()
 	_build_terrain()
 	_build_seabed()
@@ -194,22 +201,81 @@ func _build_seabed() -> void:
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var indices := PackedInt32Array()
-	var center := (map_size - 1) * 0.5
-	for y in range(map_size):
-		for x in range(map_size):
-			if cells[y * map_size + x] == 0:
-				continue
-			var depth := 0.20 + water_depths[y * map_size + x] * MAX_SEABED_DEPTH
-			_append_quad(
-				vertices, normals, uvs, indices,
-				Vector3((x - center) * CELL_SIZE, WATER_Y - depth, (y - center) * CELL_SIZE),
-				CELL_SIZE, depth / MAX_SEABED_DEPTH
-			)
+	var fine_size := map_size * SEABED_SUBDIVISIONS
+	var step := CELL_SIZE / SEABED_SUBDIVISIONS
+	var map_min := -map_size * CELL_SIZE * 0.5
+	var height_grid := PackedFloat32Array()
+	height_grid.resize((fine_size + 1) * (fine_size + 1))
+	for grid_y in range(fine_size + 1):
+		for grid_x in range(fine_size + 1):
+			var world_x := map_min + grid_x * step
+			var world_z := map_min + grid_y * step
+			height_grid[grid_y * (fine_size + 1) + grid_x] = _seabed_surface_y(world_x, world_z)
+	# One shared grid gives the guide's subdivided-plane topology. It is both
+	# smoother and cheaper than storing four disconnected vertices per quad.
+	var row_size := fine_size + 1
+	for grid_y in range(row_size):
+		for grid_x in range(row_size):
+			var grid_index := grid_y * row_size + grid_x
+			var world_x := map_min + grid_x * step
+			var world_z := map_min + grid_y * step
+			vertices.append(Vector3(world_x, height_grid[grid_index], world_z))
+			uvs.append(Vector2(world_x, world_z))
+			var left_x := maxi(0, grid_x - 1)
+			var right_x := mini(fine_size, grid_x + 1)
+			var down_y := maxi(0, grid_y - 1)
+			var up_y := mini(fine_size, grid_y + 1)
+			var height_left := height_grid[grid_y * row_size + left_x]
+			var height_right := height_grid[grid_y * row_size + right_x]
+			var height_down := height_grid[down_y * row_size + grid_x]
+			var height_up := height_grid[up_y * row_size + grid_x]
+			normals.append(Vector3(height_left - height_right, step * 2.0, height_down - height_up).normalized())
+	for fine_y in range(fine_size):
+		for fine_x in range(fine_size):
+			var first := fine_y * row_size + fine_x
+			indices.append_array(PackedInt32Array([
+				first, first + row_size + 1, first + 1,
+				first, first + row_size, first + row_size + 1,
+			]))
 	seabed.mesh = _arrays_to_mesh(vertices, normals, uvs, indices)
 	var material := StandardMaterial3D.new()
-	material.albedo_color = Color("82917a")
+	# Continue the wet beach underneath the water instead of revealing an
+	# unrelated grey material exactly where the coastal terrain mesh ends.
+	material.albedo_color = Color("7a6138")
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.roughness = 1.0
 	seabed.material_override = material
+
+
+func _seabed_surface_y(world_x: float, world_z: float) -> float:
+	return WATER_Y - _sample_generated_field(generated_seabed_depths, world_x, world_z, 0.04)
+
+
+func _sample_visual_water_depth(world_x: float, world_z: float) -> float:
+	return _sample_generated_field(visual_water_depths, world_x, world_z, 0.0)
+
+
+func _sample_generated_field(field: PackedFloat32Array, world_x: float, world_z: float, fallback: float) -> float:
+	var texture_size := map_size * depth_field_resolution
+	if field.size() != texture_size * texture_size:
+		return fallback
+	var sample_x := clampf(
+		(world_x / CELL_SIZE + map_size * 0.5) * depth_field_resolution - 0.5,
+		0.0, texture_size - 1.0
+	)
+	var sample_y := clampf(
+		(world_z / CELL_SIZE + map_size * 0.5) * depth_field_resolution - 0.5,
+		0.0, texture_size - 1.0
+	)
+	var x0 := floori(sample_x)
+	var y0 := floori(sample_y)
+	var x1 := mini(x0 + 1, texture_size - 1)
+	var y1 := mini(y0 + 1, texture_size - 1)
+	var blend_x := sample_x - x0
+	var blend_y := sample_y - y0
+	var top := lerpf(field[y0 * texture_size + x0], field[y0 * texture_size + x1], blend_x)
+	var bottom := lerpf(field[y1 * texture_size + x0], field[y1 * texture_size + x1], blend_x)
+	return lerpf(top, bottom, blend_y)
 
 
 func _build_water() -> void:
@@ -356,82 +422,16 @@ func _arrays_to_mesh(
 	return mesh
 
 
-func _build_water_depths() -> PackedFloat32Array:
-	var distances := PackedFloat32Array()
-	distances.resize(map_size * map_size)
-	var far := float(map_size * 2)
-	for y in range(map_size):
-		for x in range(map_size):
-			var index := y * map_size + x
-			distances[index] = 0.0 if cells[index] == 0 else far
-	for y in range(map_size):
-		for x in range(map_size):
-			var index := y * map_size + x
-			if cells[index] == 0:
-				continue
-			if x > 0: distances[index] = minf(distances[index], distances[index - 1] + 1.0)
-			if y > 0: distances[index] = minf(distances[index], distances[index - map_size] + 1.0)
-	for y in range(map_size - 1, -1, -1):
-		for x in range(map_size - 1, -1, -1):
-			var index := y * map_size + x
-			if cells[index] == 0:
-				continue
-			if x < map_size - 1: distances[index] = minf(distances[index], distances[index + 1] + 1.0)
-			if y < map_size - 1: distances[index] = minf(distances[index], distances[index + map_size] + 1.0)
-	for index in range(distances.size()):
-		distances[index] = clampf((distances[index] - 1.0) / 7.0, 0.0, 1.0)
-	return distances
-
-
 func _create_water_depth_texture() -> ImageTexture:
-	const RESOLUTION := 4
-	var texture_size := map_size * RESOLUTION
-	var water_distances := PackedFloat32Array()
-	var land_distances := PackedFloat32Array()
-	water_distances.resize(texture_size * texture_size)
-	land_distances.resize(texture_size * texture_size)
-	var far := float(texture_size * 2)
+	var texture_size := map_size * depth_field_resolution
+	var image := Image.create(texture_size, texture_size, false, Image.FORMAT_RGBAF)
 	for y in range(texture_size):
 		for x in range(texture_size):
-			var world_x := (float(x) + 0.5) / RESOLUTION - map_size * 0.5
-			var world_z := (float(y) + 0.5) / RESOLUTION - map_size * 0.5
-			var is_visual_land := _sample_land_density(world_x, world_z) >= COAST_THRESHOLD
-			water_distances[y * texture_size + x] = 0.0 if is_visual_land else far
-			land_distances[y * texture_size + x] = far if is_visual_land else 0.0
-	water_distances = _distance_transform(water_distances, texture_size)
-	land_distances = _distance_transform(land_distances, texture_size)
-	var image := Image.create(texture_size, texture_size, false, Image.FORMAT_RGBA8)
-	for y in range(texture_size):
-		for x in range(texture_size):
-			var water_distance := water_distances[y * texture_size + x]
-			var land_distance := land_distances[y * texture_size + x]
-			var water_value := clampf((water_distance - 0.5) / (7.0 * RESOLUTION), 0.0, 1.0)
-			var land_value := clampf((land_distance - 0.5) / (7.0 * RESOLUTION), 0.0, 1.0)
-			image.set_pixel(x, y, Color(water_value, land_value, 0.0, 1.0))
+			var index := y * texture_size + x
+			image.set_pixel(x, y, Color(
+				visual_water_depths[index],
+				visual_land_depths[index],
+				generated_seabed_depths[index] / MAX_SEABED_DEPTH,
+				1.0
+			))
 	return ImageTexture.create_from_image(image)
-
-
-func _distance_transform(source: PackedFloat32Array, texture_size: int) -> PackedFloat32Array:
-	var distances := source
-	var diagonal := 1.41421356
-	for y in range(texture_size):
-		for x in range(texture_size):
-			var index := y * texture_size + x
-			if distances[index] == 0.0:
-				continue
-			if x > 0: distances[index] = minf(distances[index], distances[index - 1] + 1.0)
-			if y > 0:
-				distances[index] = minf(distances[index], distances[index - texture_size] + 1.0)
-				if x > 0: distances[index] = minf(distances[index], distances[index - texture_size - 1] + diagonal)
-				if x < texture_size - 1: distances[index] = minf(distances[index], distances[index - texture_size + 1] + diagonal)
-	for y in range(texture_size - 1, -1, -1):
-		for x in range(texture_size - 1, -1, -1):
-			var index := y * texture_size + x
-			if distances[index] == 0.0:
-				continue
-			if x < texture_size - 1: distances[index] = minf(distances[index], distances[index + 1] + 1.0)
-			if y < texture_size - 1:
-				distances[index] = minf(distances[index], distances[index + texture_size] + 1.0)
-				if x > 0: distances[index] = minf(distances[index], distances[index + texture_size - 1] + diagonal)
-				if x < texture_size - 1: distances[index] = minf(distances[index], distances[index + texture_size + 1] + diagonal)
-	return distances

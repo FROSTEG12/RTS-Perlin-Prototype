@@ -36,7 +36,7 @@ uniform float specular : hint_range(0.0, 1.0) = 0.48;
 uniform sampler2D caustics_texture : filter_linear_mipmap, repeat_enable;
 uniform float caustics_scale : hint_range(0.1, 10.0, 0.1) = 2.8;
 uniform float caustics_speed : hint_range(0.0, 1.0, 0.01) = 0.10;
-uniform float caustics_intensity : hint_range(0.0, 2.0, 0.1) = 0.48;
+uniform float caustics_intensity : hint_range(0.0, 2.0, 0.1) = 0.34;
 uniform float caustics_depth_fade : hint_range(0.0, 1.0, 0.01) = 0.62;
 
 uniform vec3 foam_color : source_color = vec3(0.96, 1.0, 0.98);
@@ -270,10 +270,6 @@ void fragment() {
 	// seabed colour underneath it.
 	screen_color = mix(vec3(0.24, 0.38, 0.32), screen_color, 0.62);
 	thickness = max(0.0, distorted_background_depth - water_linear_depth);
-	float visual_thickness = mix(0.12, max_depth, smoothstep(0.0, 1.0, map_depth));
-	float depth_ratio = smoothstep(0.0, 1.0, map_depth);
-	float seabed_variation = noise(world_vert.xz * 0.11 + vec2(17.0, -23.0));
-	depth_ratio = clamp(depth_ratio + seabed_variation * 0.055 * smoothstep(0.12, 0.72, map_depth), 0.0, 1.0);
 
 	vec4 background_ndc = vec4(distorted_uv * 2.0 - 1.0, texture(DEPTH_TEXTURE, distorted_uv).x, 1.0);
 	#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
@@ -281,6 +277,16 @@ void fragment() {
 	#endif
 	vec4 background_world = INV_VIEW_MATRIX * INV_PROJECTION_MATRIX * background_ndc;
 	vec3 background_world_position = background_world.xyz / background_world.w;
+	// DEPTH_TEXTURE still drives refraction and intersection rejection above.
+	// Compatibility depth loses too much precision for a steep orthographic
+	// camera, so volume absorption uses the generator's full-float bathymetry.
+	// This is the actual vertical water column stored in the blue channel.
+	float generated_thickness = texture(map_depth_texture, map_uv).b * max_depth;
+	thickness = generated_thickness;
+	float fade_range = max(0.001, max_depth - fade_start_depth);
+	float depth_ratio = clamp((thickness - fade_start_depth) / fade_range, 0.0, 1.0);
+	float seabed_variation = noise(world_vert.xz * 0.11 + vec2(17.0, -23.0));
+	depth_ratio = clamp(depth_ratio + seabed_variation * 0.025 * smoothstep(0.08, 0.72, depth_ratio), 0.0, 1.0);
 	if (thickness > 0.0) {
 		vec2 caustics_uv1 = background_world_position.xz * caustics_scale;
 		caustics_uv1.x += TIME * caustics_speed;
@@ -289,16 +295,17 @@ void fragment() {
 		float caustics_sample1 = texture(caustics_texture, caustics_uv1).r;
 		float caustics_sample2 = texture(caustics_texture, caustics_uv2).r;
 		float caustics_value = caustics_sample1 * caustics_sample2;
-		float caustics_fade = 1.0 - clamp(thickness * caustics_depth_fade, 0.0, 1.0);
-		screen_color += caustics_value * caustics_intensity * caustics_fade;
+		float caustics_fade = 1.0 - smoothstep(0.08, 0.68, thickness);
+		float caustics_patchiness = mix(0.58, 1.0, noise(world_vert.xz * 0.16 + vec2(9.0, -14.0)) * 0.5 + 0.5);
+		screen_color += caustics_value * caustics_intensity * caustics_fade * caustics_patchiness;
 	}
 
-	vec3 transmittance = exp(-visual_thickness * water_absorption);
+	vec3 transmittance = exp(-thickness * water_absorption);
 	vec3 water_volume_color = mix(base_tint_color, deep_color, depth_ratio);
 	vec3 apparent_seabed_color = screen_color * water_volume_color;
 	ALBEDO = mix(underwater_fog_color, apparent_seabed_color, transmittance);
 	vec3 readable_depth_color = mix(shallow_surface_color, deep_surface_color, depth_ratio);
-	ALBEDO = mix(ALBEDO, readable_depth_color, 0.40);
+	ALBEDO = mix(ALBEDO, readable_depth_color, 0.12);
 	float normalized_wave_height = clamp(wave_height / max(0.001, sea_height * 2.45), 0.0, 1.0);
 	ALBEDO *= mix(0.88, 1.10, normalized_wave_height);
 	float fresnel = pow(1.0 - clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0), 3.0);

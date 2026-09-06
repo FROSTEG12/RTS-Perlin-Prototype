@@ -2,6 +2,8 @@ class_name MapGenerator
 extends RefCounted
 
 const RESOURCE_BASELINE_SIZE := 72
+const BATHYMETRY_RESOLUTION := 6
+const BATHYMETRY_MAX_DEPTH := 2.2
 const RESOURCE_RULES: Array[Dictionary] = [
 	{"kind": "iron", "base_count": 7, "spacing": 7.0, "field_scale": 15.0, "salt": 7919},
 	{"kind": "stone", "base_count": 13, "spacing": 5.0, "field_scale": 12.0, "salt": 5051},
@@ -176,9 +178,120 @@ func generate_map(seed_value: int, scale: float, water: int, map_size: int) -> D
 			water_cells += 1
 	return {
 		"cells": cleaned,
+		"bathymetry": _generate_bathymetry(cleaned, map_size, seed_value),
 		"water_percent": roundi(float(water_cells) / cleaned.size() * 100.0),
 		"largest_land_percent": _largest_land_share(cleaned, map_size),
 	}
+
+
+func _generate_bathymetry(cells: PackedByteArray, map_size: int, seed_value: int) -> Dictionary:
+	var field_size := map_size * BATHYMETRY_RESOLUTION
+	var water_distance := PackedFloat32Array()
+	var land_distance := PackedFloat32Array()
+	water_distance.resize(field_size * field_size)
+	land_distance.resize(field_size * field_size)
+	var far := float(field_size * 2)
+	for y in range(field_size):
+		for x in range(field_size):
+			var world_x := (float(x) + 0.5) / BATHYMETRY_RESOLUTION - map_size * 0.5
+			var world_y := (float(y) + 0.5) / BATHYMETRY_RESOLUTION - map_size * 0.5
+			var visual_land := _sample_land_density(cells, map_size, world_x, world_y) >= 0.5
+			var index := y * field_size + x
+			water_distance[index] = 0.0 if visual_land else far
+			land_distance[index] = far if visual_land else 0.0
+	water_distance = _distance_transform(water_distance, field_size)
+	land_distance = _distance_transform(land_distance, field_size)
+
+	var depth := PackedFloat32Array()
+	depth.resize(field_size * field_size)
+	var normalized_water_distance := PackedFloat32Array()
+	var normalized_land_distance := PackedFloat32Array()
+	normalized_water_distance.resize(field_size * field_size)
+	normalized_land_distance.resize(field_size * field_size)
+	var floor_permutation := _make_permutation(seed_value ^ 0x45D9F3B)
+	for y in range(field_size):
+		for x in range(field_size):
+			var index := y * field_size + x
+			var distance_world := maxf(0.0, (water_distance[index] - 0.5) / BATHYMETRY_RESOLUTION)
+			normalized_water_distance[index] = clampf(distance_world / 7.0, 0.0, 1.0)
+			normalized_land_distance[index] = clampf(
+				(land_distance[index] - 0.5) / (7.0 * BATHYMETRY_RESOLUTION), 0.0, 1.0
+			)
+			# A shallow sandy shelf first, then a broad continental slope. Noise
+			# only shapes the basin, so it cannot cut terraces into the shoreline.
+			var shelf := smoothstep(0.0, 3.4, distance_world)
+			var basin := smoothstep(1.6, 10.5, distance_world)
+			var world_x := (float(x) + 0.5) / BATHYMETRY_RESOLUTION - map_size * 0.5
+			var world_y := (float(y) + 0.5) / BATHYMETRY_RESOLUTION - map_size * 0.5
+			var floor_noise := _fractal_noise(world_x / 18.0 + 43.0, world_y / 18.0 - 29.0, floor_permutation)
+			var irregularity := floor_noise * 0.18 * smoothstep(2.2, 7.0, distance_world)
+			depth[index] = clampf(0.04 + shelf * 0.58 + basin * 1.58 + irregularity, 0.04, BATHYMETRY_MAX_DEPTH)
+	return {
+		"resolution": BATHYMETRY_RESOLUTION,
+		"max_depth": BATHYMETRY_MAX_DEPTH,
+		"water_distance": normalized_water_distance,
+		"land_distance": normalized_land_distance,
+		"depth": depth,
+	}
+
+
+func _sample_land_density(cells: PackedByteArray, map_size: int, world_x: float, world_y: float) -> float:
+	var center := (map_size - 1) * 0.5
+	var warp_x := sin(world_y * 0.37 + world_x * 0.11) * 0.13 + sin(world_y * 0.83 - world_x * 0.19) * 0.045
+	var warp_y := sin(world_x * 0.41 - world_y * 0.09) * 0.13 + sin(world_x * 0.91 + world_y * 0.17) * 0.045
+	var grid_x := world_x + warp_x + center
+	var grid_y := world_y + warp_y + center
+	var base_x := floori(grid_x)
+	var base_y := floori(grid_y)
+	var weights_x := _cubic_weights(grid_x - base_x)
+	var weights_y := _cubic_weights(grid_y - base_y)
+	var density := 0.0
+	for offset_y in range(4):
+		for offset_x in range(4):
+			var cell_x := base_x + offset_x - 1
+			var cell_y := base_y + offset_y - 1
+			if cell_x < 0 or cell_y < 0 or cell_x >= map_size or cell_y >= map_size:
+				continue
+			if cells[cell_y * map_size + cell_x] == 0:
+				density += weights_x[offset_x] * weights_y[offset_y]
+	return density
+
+
+func _cubic_weights(amount: float) -> PackedFloat32Array:
+	var squared := amount * amount
+	var cubed := squared * amount
+	return PackedFloat32Array([
+		pow(1.0 - amount, 3.0) / 6.0,
+		(3.0 * cubed - 6.0 * squared + 4.0) / 6.0,
+		(-3.0 * cubed + 3.0 * squared + 3.0 * amount + 1.0) / 6.0,
+		cubed / 6.0,
+	])
+
+
+func _distance_transform(source: PackedFloat32Array, field_size: int) -> PackedFloat32Array:
+	var distances := source
+	var diagonal := sqrt(2.0)
+	for y in range(field_size):
+		for x in range(field_size):
+			var index := y * field_size + x
+			if distances[index] == 0.0:
+				continue
+			if x > 0: distances[index] = minf(distances[index], distances[index - 1] + 1.0)
+			if y > 0:
+				distances[index] = minf(distances[index], distances[index - field_size] + 1.0)
+				if x > 0: distances[index] = minf(distances[index], distances[index - field_size - 1] + diagonal)
+				if x < field_size - 1: distances[index] = minf(distances[index], distances[index - field_size + 1] + diagonal)
+	for y in range(field_size - 1, -1, -1):
+		for x in range(field_size - 1, -1, -1):
+			var index := y * field_size + x
+			if distances[index] == 0.0:
+				continue
+			if x < field_size - 1: distances[index] = minf(distances[index], distances[index + 1] + 1.0)
+			if y < field_size - 1:
+				distances[index] = minf(distances[index], distances[index + field_size] + 1.0)
+				if x > 0: distances[index] = minf(distances[index], distances[index + field_size - 1] + diagonal)
+				if x < field_size - 1: distances[index] = minf(distances[index], distances[index + field_size + 1] + diagonal)
+	return distances
 
 
 func generate_resources(cells: PackedByteArray, map_size: int, seed_value: int, density: int) -> Array[Dictionary]:

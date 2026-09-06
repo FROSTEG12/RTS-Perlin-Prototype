@@ -8,14 +8,18 @@ const DEFAULT_RESOURCE_DENSITY := 130
 @onready var map_renderer: MapRenderer3D = $MapRenderer
 @onready var test_unit: TestUnit3D = $MapRenderer/TestUnit
 @onready var game_camera: IsometricGameCamera = $GameCamera
+@onready var new_map_button: Button = $UI/MapControls/Margin/Rows/NewMapButton
+@onready var seed_label: Label = $UI/MapControls/Margin/Rows/SeedLabel
 
 var world_seed: int
 var current_cells := PackedByteArray()
 var pathfinder := GridPathfinder.new()
+var is_generating := false
 
 
 func _ready() -> void:
 	world_seed = int(Time.get_unix_time_from_system()) % 2_000_000_000
+	new_map_button.pressed.connect(_on_new_map_pressed)
 	generate_world()
 
 
@@ -27,10 +31,28 @@ func generate_world() -> void:
 	)
 	current_cells = map_data["cells"]
 	pathfinder.setup(current_cells, DEFAULT_MAP_SIZE)
-	map_renderer.set_world(current_cells, DEFAULT_MAP_SIZE, generated_resources)
+	map_renderer.set_world(current_cells, DEFAULT_MAP_SIZE, generated_resources, map_data["bathymetry"])
 	game_camera.configure_map(map_renderer.get_half_extent())
 	var spawn_cell := generator.find_mainland_spawn(current_cells, DEFAULT_MAP_SIZE)
 	test_unit.place_on_cell(spawn_cell, map_renderer.cell_to_world(spawn_cell.x, spawn_cell.y))
+	seed_label.text = "Seed: %d  •  Вода: %d%%" % [world_seed, int(map_data["water_percent"])]
+
+
+func _on_new_map_pressed() -> void:
+	if is_generating:
+		return
+	is_generating = true
+	new_map_button.disabled = true
+	new_map_button.text = "Генерация…"
+	await get_tree().process_frame
+	test_unit.cancel_movement(map_renderer)
+	var random := RandomNumberGenerator.new()
+	random.randomize()
+	world_seed = random.randi_range(1, 2_000_000_000)
+	generate_world()
+	new_map_button.text = "Новая карта"
+	new_map_button.disabled = false
+	is_generating = false
 
 
 func _unhandled_input(event: InputEvent) -> void:
