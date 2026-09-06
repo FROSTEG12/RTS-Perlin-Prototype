@@ -75,6 +75,7 @@ func _set_time_of_day(value: float) -> void:
 
 func _apply_day_night_lighting() -> void:
 	DAY_NIGHT_LIGHTING.apply(current_time, key_light, world_environment.environment)
+	map_renderer.WORLD_EDGE.set_mist_color(map_renderer, world_environment.environment.background_color)
 
 
 func _on_building_button_toggled(enabled: bool) -> void:

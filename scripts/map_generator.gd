@@ -255,10 +255,9 @@ func _sample_land_density(cells: PackedByteArray, map_size: int, world_x: float,
 	var density := 0.0
 	for offset_y in range(4):
 		for offset_x in range(4):
-			var cell_x := base_x + offset_x - 1
-			var cell_y := base_y + offset_y - 1
-			if cell_x < 0 or cell_y < 0 or cell_x >= map_size or cell_y >= map_size:
-				continue
+			# Same edge-extension rule as MapRenderer3D: no phantom sea outside.
+			var cell_x := clampi(base_x + offset_x - 1, 0, map_size - 1)
+			var cell_y := clampi(base_y + offset_y - 1, 0, map_size - 1)
 			if cells[cell_y * map_size + cell_x] == 0:
 				density += weights_x[offset_x] * weights_y[offset_y]
 	return density

@@ -2,6 +2,7 @@ shader_type spatial;
 render_mode cull_disabled, depth_draw_opaque;
 
 #include "res://shaders/cloud_common.gdshaderinc"
+#include "res://shaders/water_edge_common.gdshaderinc"
 
 uniform sampler2D DEPTH_TEXTURE : hint_depth_texture, filter_linear_mipmap;
 uniform sampler2D SCREEN_TEXTURE : hint_screen_texture, filter_linear_mipmap;
@@ -224,25 +225,27 @@ float fbm_voronoi(vec2 uv) {
 }
 
 
+// Height and derivative samples must use precisely the same attenuation.
+float surface_height(vec3 p, float time) {
+	float shore = texture(map_depth_texture, p.xz / map_world_size + vec2(0.5)).r;
+	vec2 edge_distance = vec2(map_world_size * 0.5) - abs(p.xz);
+	vec2 edge_fade = smoothstep(vec2(0.0), vec2(0.8), edge_distance);
+	// Product is smooth at corners; min(distance_x, distance_z) makes a ridge.
+	return -map(p, time) * smoothstep(0.004, 0.060, shore) * edge_fade.x * edge_fade.y;
+}
 void vertex() {
 	vec3 original_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vec3 sample_position = vec3(original_world.x, 0.0, original_world.z);
-	wave_height = -map(sample_position, TIME);
-	vec2 vertex_map_uv = original_world.xz / map_world_size + vec2(0.5);
-	float vertex_shore_depth = texture(map_depth_texture, vertex_map_uv).r;
-	// A steep displaced plane intersecting a triangulated beach exposes its
-	// tessellation. Let waves gain their full height after leaving the shore.
-	float shore_wave_blend = smoothstep(0.004, 0.060, vertex_shore_depth);
-	wave_height *= shore_wave_blend;
+	wave_height = surface_height(sample_position, TIME);
 	VERTEX.y += wave_height;
 	world_vert = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float eps = 0.04;
-	float center_height = wave_height;
-	float height_x = -map(sample_position + vec3(eps, 0.0, 0.0), TIME);
-	float height_z = -map(sample_position + vec3(0.0, 0.0, eps), TIME);
-	vertex_normal_world = normalize(vec3(center_height - height_x, eps, center_height - height_z));
+	float hx0 = surface_height(sample_position - vec3(eps, 0.0, 0.0), TIME);
+	float hx1 = surface_height(sample_position + vec3(eps, 0.0, 0.0), TIME);
+	float hz0 = surface_height(sample_position - vec3(0.0, 0.0, eps), TIME);
+	float hz1 = surface_height(sample_position + vec3(0.0, 0.0, eps), TIME);
+	vertex_normal_world = normalize(vec3(hx0 - hx1, eps * 2.0, hz0 - hz1));
 }
-
 
 void fragment() {
 	vec2 map_uv = world_vert.xz / map_world_size + vec2(0.5);
@@ -254,7 +257,9 @@ void fragment() {
 	float smooth_factor = clamp((dist_to_camera - normal_smoothness_dist) / 200.0, 0.0, 1.0);
 	float micro_detail_amount = clamp(camera_ortho_size / 22.0, 0.42, 1.0);
 	vec3 zoom_stable_normal = normalize(mix(vertex_normal_world, detailed_normal, micro_detail_amount));
+	float edge_distance = max(0.0, map_world_size * 0.5 - max(abs(world_vert.x), abs(world_vert.z)));
 	vec3 final_normal = mix(zoom_stable_normal, vertex_normal_world, smooth_factor);
+	final_normal = normalize(mix(vertex_normal_world, final_normal, smoothstep(0.0, 0.65, edge_distance)));
 	NORMAL = (VIEW_MATRIX * vec4(final_normal, 0.0)).xyz;
 
 	float water_linear_depth = -VERTEX.z;
@@ -443,6 +448,25 @@ void fragment() {
 	EMISSION += mix(foam_thin_color, foam_color, clamp(bright_foam * 1.6, 0.0, 1.0)) * bright_foam * 0.58;
 
 	ROUGHNESS = mix(roughness, 0.8, clamp(foam_mask_primary * bubble_alpha + foam_mask_shadow + open_water_foam, 0.0, 1.0));
+	// Replace the local material gradually, not by layering another flat strip.
+	vec2 side_distance = max(vec2(0.0), vec2(map_world_size * 0.5) - abs(world_vert.xz));
+	vec2 boundary_x = vec2(sign(world_vert.x) * map_world_size * 0.5, world_vert.z);
+	vec2 boundary_z = vec2(world_vert.x, sign(world_vert.z) * map_world_size * 0.5);
+	float corner_weight = overflow_corner_weight(world_vert.xz, map_world_size * 0.5);
+	vec3 flow = mix(edge_flow(boundary_z, -side_distance.y, TIME), edge_flow(boundary_x, -side_distance.x, TIME), corner_weight);
+	float boundary_depth = mix(
+		texture(map_depth_texture, boundary_z / map_world_size + vec2(0.5)).b,
+		texture(map_depth_texture, boundary_x / map_world_size + vec2(0.5)).b, corner_weight) * max_depth;
+	float edge_blend = 1.0 - smoothstep(0.0, 1.5, edge_distance);
+	vec3 overflow = edge_water_color(boundary_depth, flow);
+	overflow *= mix(vec3(1.0), cloud_shadow_tint, cloud_shadow * cloud_shadow_strength);
+	float overflow_foam = flow.z * 0.30 + mix(
+		overflow_crest_foam(boundary_z, -side_distance.y, TIME),
+		overflow_crest_foam(boundary_x, -side_distance.x, TIME), corner_weight);
+	overflow = mix(overflow, edge_foam_color, overflow_foam);
+	ALBEDO = mix(ALBEDO, overflow, edge_blend);
+	EMISSION = mix(EMISSION, edge_foam_color * overflow_foam * 0.08, edge_blend);
+	ROUGHNESS = mix(ROUGHNESS, 0.36, edge_blend);
 	SPECULAR = specular;
 	METALLIC = metallic;
 }

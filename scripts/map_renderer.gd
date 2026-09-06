@@ -97,6 +97,9 @@ func set_cloud_shadow_offset(offset: Vector2) -> void:
 		terrain_material.set_shader_parameter("cloud_shadow_offset", offset)
 	if water_material != null:
 		water_material.set_shader_parameter("cloud_shadow_offset", offset)
+	var falling := get_node_or_null("WorldEdge/FallingWater") as MeshInstance3D
+	if falling != null:
+		falling.material_override.set_shader_parameter("cloud_shadow_offset", offset)
 
 
 func _build_terrain() -> void:
@@ -272,8 +275,9 @@ func _cubic_weights(amount: float) -> PackedFloat32Array:
 
 
 func _land_value(cell_x: int, cell_y: int) -> float:
-	if cell_x < 0 or cell_y < 0 or cell_x >= map_size or cell_y >= map_size:
-		return 0.0
+	# Extend the last real sample; the map border is not an ocean coastline.
+	cell_x = clampi(cell_x, 0, map_size - 1)
+	cell_y = clampi(cell_y, 0, map_size - 1)
 	return 1.0 if cells[cell_y * map_size + cell_x] == 0 else 0.0
 
 
@@ -384,6 +388,7 @@ func _build_water() -> void:
 	water_material = ShaderMaterial.new()
 	water_material.shader = WATER_SHADER
 	water_material.set_shader_parameter("caustics_texture", CAUSTICS_TEXTURE)
+	water_material.set_shader_parameter("edge_flow_noise", WORLD_EDGE.FLOW_NOISE)
 	water_material.set_shader_parameter("map_depth_texture", water_depth_texture)
 	water_material.set_shader_parameter("map_world_size", map_size * CELL_SIZE)
 	water_material.set_shader_parameter("water_level", WATER_Y)

@@ -23,6 +23,7 @@ static func sample(hour: float) -> Dictionary:
 		"ambient_color": ambient,
 		"ambient_energy": lerpf(0.62, 0.48, day),
 		"shadow_opacity": lerpf(0.30, 0.82, day),
+		"edge_mist_color": Color(0.09, 0.13, 0.20).lerp(Color(0.39, 0.46, 0.49), day).lerp(Color(0.40, 0.38, 0.39), warmth * 0.22),
 	}
 
 
@@ -35,3 +36,4 @@ static func apply(hour: float, key: DirectionalLight3D, environment: Environment
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	environment.ambient_light_color = state.ambient_color
 	environment.ambient_light_energy = state.ambient_energy
+	environment.background_color = state.edge_mist_color
