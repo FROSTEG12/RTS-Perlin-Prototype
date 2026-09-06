@@ -67,8 +67,8 @@ uniform vec2 cloud_shadow_offset = vec2(0.0);
 uniform float cloud_shadow_scale : hint_range(0.005, 0.2, 0.001) = 0.085;
 uniform float cloud_shadow_speed : hint_range(0.0, 2.0, 0.01) = 0.18;
 uniform float cloud_shadow_coverage : hint_range(0.0, 1.0, 0.01) = 0.64;
-uniform float cloud_shadow_strength : hint_range(0.0, 1.0, 0.01) = 0.48;
-uniform vec3 cloud_shadow_tint : source_color = vec3(0.43, 0.51, 0.54);
+uniform float cloud_shadow_strength : hint_range(0.0, 1.0, 0.01) = 0.68;
+uniform vec3 cloud_shadow_tint : source_color = vec3(0.31, 0.40, 0.45);
 
 varying vec3 world_vert;
 varying float wave_height;
