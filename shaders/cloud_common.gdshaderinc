@@ -51,21 +51,15 @@ float projected_cloud_density(
 	float coverage
 ) {
 	vec2 wind = normalize(wind_direction);
-	vec2 position = world_position * scale - wind * time * speed * scale;
-	// Warp the low-frequency sampling lattice before building the volume. This
-	// prevents the interpolation grid from showing up as diagonal polygons when
-	// the shadow contrast is intentionally high.
-	vec2 domain_warp = vec2(
-		cloud_noise(vec3(position * 0.47, 11.3)),
-		cloud_noise(vec3(position * 0.47 + vec2(5.7, -8.1), 17.6))
-	) - vec2(0.5);
-	position += domain_warp * 1.45;
-	// Balanced height samples retain the guide's volumetric absorption idea
-	// without allowing one coarse octave to dictate the complete silhouette.
-	float lower = cloud_fbm(vec3(position * 1.05, 1.7));
-	float middle = cloud_fbm(vec3(position * 0.88 + vec2(7.3, -4.1), 3.9));
-	float upper = cloud_fbm(vec3(position * 1.27 + vec2(-3.8, 6.2), 6.4));
-	float detail = cloud_fbm(vec3(position * 2.10 + vec2(13.1, 2.7), 9.2));
-	float volume = lower * 0.36 + middle * 0.29 + upper * 0.22 + detail * 0.13;
-	return smoothstep(coverage - 0.025, coverage + 0.19, volume);
+	vec2 advected = world_position * scale - wind * time * speed * scale;
+	// Project the same 3D density volume used by the visible ray marcher. Four
+	// height samples keep the shadow soft and in lockstep with the cloud.
+	float projected = 0.0;
+	for (int height_step = 0; height_step < 4; height_step++) {
+		float height = (float(height_step) + 0.5) / 4.0;
+		vec3 point = vec3(advected.x, (7.5 + height * 5.0) * scale, advected.y);
+		float density = cloud_fbm(point * 2.032);
+		projected += density * smoothstep(coverage, coverage + 0.035, density);
+	}
+	return smoothstep(0.18, 0.78, projected * 0.25);
 }

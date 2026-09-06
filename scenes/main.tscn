@@ -18,10 +18,6 @@ radiance_size = 3
 render_priority = 4
 shader = ExtResource("6_low_clouds")
 
-[sub_resource type="PlaneMesh" id="PlaneMesh_low_clouds"]
-material = SubResource("ShaderMaterial_low_clouds")
-size = Vector2(360, 360)
-
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
 background_color = Color(0.018, 0.045, 0.052, 1)
@@ -56,11 +52,6 @@ light_energy = 0.92
 shadow_enabled = false
 directional_shadow_max_distance = 80.0
 
-[node name="LowCloudLayer" type="MeshInstance3D" parent="."]
-position = Vector3(0, 9, 0)
-cast_shadow = 0
-mesh = SubResource("PlaneMesh_low_clouds")
-
 [node name="MapRenderer" type="Node3D" parent="."]
 script = ExtResource("2_renderer")
 
@@ -90,7 +81,21 @@ near = 0.05
 far = 180.0
 script = ExtResource("3_camera")
 
+[node name="CloudCanvas" type="CanvasLayer" parent="."]
+layer = 1
+
+[node name="CloudOverlay" type="ColorRect" parent="CloudCanvas"]
+material = SubResource("ShaderMaterial_low_clouds")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 1, 1, 1)
+
 [node name="UI" type="CanvasLayer" parent="."]
+layer = 2
 
 [node name="MapControls" type="PanelContainer" parent="UI"]
 offset_left = 18.0

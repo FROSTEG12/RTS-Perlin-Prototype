@@ -63,9 +63,9 @@ uniform float wind_streak_density : hint_range(0.1, 20.0, 0.1) = 13.0;
 uniform float shore_wave_speed : hint_range(0.0, 1.0, 0.01) = 0.10;
 uniform float shore_wave_frequency : hint_range(1.0, 40.0, 0.5) = 16.0;
 uniform vec2 cloud_wind_direction = vec2(0.91, 0.41);
-uniform float cloud_scale : hint_range(0.005, 0.2, 0.001) = 0.070;
+uniform float cloud_scale : hint_range(0.005, 0.2, 0.001) = 0.034;
 uniform float cloud_speed : hint_range(0.0, 2.0, 0.01) = 0.68;
-uniform float cloud_coverage : hint_range(0.0, 1.0, 0.01) = 0.47;
+uniform float cloud_coverage : hint_range(0.0, 1.0, 0.01) = 0.63;
 uniform float cloud_shadow_strength : hint_range(0.0, 1.0, 0.01) = 0.72;
 uniform vec3 cloud_shadow_tint : source_color = vec3(0.22, 0.31, 0.36);
 

@@ -8,7 +8,7 @@ const DEFAULT_RESOURCE_DENSITY := 130
 @onready var map_renderer: MapRenderer3D = $MapRenderer
 @onready var test_unit: TestUnit3D = $MapRenderer/TestUnit
 @onready var game_camera: IsometricGameCamera = $GameCamera
-@onready var low_cloud_layer: MeshInstance3D = $LowCloudLayer
+@onready var cloud_overlay: ColorRect = $CloudCanvas/CloudOverlay
 @onready var new_map_button: Button = $UI/MapControls/Margin/Rows/NewMapButton
 @onready var seed_label: Label = $UI/MapControls/Margin/Rows/SeedLabel
 
@@ -19,11 +19,15 @@ var is_generating := false
 
 
 func _process(_delta: float) -> void:
-	# Keep the finite ray-march carrier beneath the orthographic camera. The
-	# shader samples world coordinates, so moving this mesh does not move or
-	# restart the actual cloud field.
-	low_cloud_layer.position.x = game_camera.position.x
-	low_cloud_layer.position.z = game_camera.position.z
+	var cloud_material := cloud_overlay.material as ShaderMaterial
+	var viewport_size := get_viewport().get_visible_rect().size
+	var camera_basis := game_camera.global_transform.basis
+	cloud_material.set_shader_parameter("camera_position", game_camera.global_position)
+	cloud_material.set_shader_parameter("camera_right", camera_basis.x.normalized())
+	cloud_material.set_shader_parameter("camera_up", camera_basis.y.normalized())
+	cloud_material.set_shader_parameter("camera_forward", (-camera_basis.z).normalized())
+	cloud_material.set_shader_parameter("ortho_size", game_camera.size)
+	cloud_material.set_shader_parameter("viewport_aspect", viewport_size.x / maxf(viewport_size.y, 1.0))
 
 
 func _ready() -> void:
