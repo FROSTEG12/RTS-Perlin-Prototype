@@ -1,0 +1,85 @@
+class_name IsometricGameCamera
+extends Camera3D
+
+const MIN_SIZE := 9.0
+const MAX_SIZE := 42.0
+const ZOOM_STEP := 1.10
+const CAMERA_HEIGHT := 18.0
+
+var dragging := false
+var map_half_extent := 52.0
+
+
+func _ready() -> void:
+	projection = Camera3D.PROJECTION_ORTHOGONAL
+	size = 22.0
+	position = Vector3(10.5, CAMERA_HEIGHT, 10.5)
+	look_at(Vector3.ZERO, Vector3.UP)
+
+
+func _process(delta: float) -> void:
+	var input := Vector2.ZERO
+	if Input.is_key_pressed(KEY_A): input.x -= 1.0
+	if Input.is_key_pressed(KEY_D): input.x += 1.0
+	if Input.is_key_pressed(KEY_W): input.y += 1.0
+	if Input.is_key_pressed(KEY_S): input.y -= 1.0
+	if input != Vector2.ZERO:
+		_move_on_ground(input.normalized() * 12.0 * delta)
+	_clamp_position()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_MIDDLE:
+			dragging = event.pressed
+			get_viewport().set_input_as_handled()
+		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_set_size(size / ZOOM_STEP)
+		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_set_size(size * ZOOM_STEP)
+	elif event is InputEventMouseMotion and dragging:
+		var drag_scale: float = size / get_viewport().get_visible_rect().size.y
+		_move_on_ground(Vector2(-event.relative.x, event.relative.y) * drag_scale * 1.45)
+		get_viewport().set_input_as_handled()
+
+
+func configure_map(half_extent: float) -> void:
+	map_half_extent = half_extent
+	_clamp_position()
+
+
+func screen_to_ground(screen_position: Vector2, ground_y: float = 0.0) -> Vector3:
+	var ray_origin := project_ray_origin(screen_position)
+	var ray_direction := project_ray_normal(screen_position)
+	var denominator := ray_direction.y
+	if absf(denominator) < 0.0001:
+		return Vector3.INF
+	var distance := (ground_y - ray_origin.y) / denominator
+	return ray_origin + ray_direction * distance
+
+
+func _set_size(new_size: float) -> void:
+	var mouse_position := get_viewport().get_mouse_position()
+	var before := screen_to_ground(mouse_position)
+	size = clampf(new_size, MIN_SIZE, MAX_SIZE)
+	var after := screen_to_ground(mouse_position)
+	if before.is_finite() and after.is_finite():
+		position += before - after
+	_clamp_position()
+	get_viewport().set_input_as_handled()
+
+
+func _move_on_ground(input: Vector2) -> void:
+	var screen_right := global_transform.basis.x
+	var screen_up := global_transform.basis.y
+	var right_ground := Vector3(screen_right.x, 0.0, screen_right.z).normalized()
+	var up_ground := Vector3(screen_up.x, 0.0, screen_up.z).normalized()
+	position += right_ground * input.x + up_ground * input.y
+
+
+func _clamp_position() -> void:
+	var margin := size * 0.35
+	var limit := maxf(0.0, map_half_extent - margin)
+	position.x = clampf(position.x, -limit, limit)
+	position.z = clampf(position.z, -limit, limit)
+	position.y = CAMERA_HEIGHT
