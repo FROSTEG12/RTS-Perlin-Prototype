@@ -334,6 +334,7 @@ void fragment() {
 	float depth_down = texture(map_depth_texture, map_uv + vec2(0.0, depth_texel.y)).r;
 	vec2 shore_gradient = vec2(depth_right - depth_left, depth_down - depth_up);
 	shore_gradient /= max(length(shore_gradient), 0.0001);
+	vec2 shore_tangent = vec2(-shore_gradient.y, shore_gradient.x);
 	float wind_into_shore = dot(wind, -shore_gradient);
 	float wind_exposure = mix(0.12, 1.0, smoothstep(-0.20, 0.72, wind_into_shore));
 	float shore_band = 1.0 - smoothstep(0.012, 0.115, map_depth);
@@ -347,56 +348,44 @@ void fragment() {
 	float shore_activity = smoothstep(0.52, 0.70, activity_noise_a * 0.35 + activity_noise_b * 0.15 + 0.5);
 	float moving_shore_foam = shore_band * incoming_front * wind_exposure * shore_breakup * shore_activity;
 	float depth_foam_factor = clamp(moving_shore_foam, 0.0, 1.0);
+	// Fine contact foam is fed into the same depth + Voronoi mask as the larger
+	// breaking waves. Keeping it separate made it too weak to affect the image.
+	float land_depth = texture(map_depth_texture, map_uv).g;
+	float contact_distance = max(map_depth, land_depth);
+	float contact_width_phase = sin(TIME * 0.28 + noise(world_vert.xz * 0.07) * 1.6) * 0.5 + 0.5;
+	float contact_width = mix(0.010, 0.017, contact_width_phase);
+	float contact_level = 1.0 - smoothstep(0.001, contact_width, contact_distance);
+	float contact_patch_noise = noise(world_vert.xz * 0.18 + shore_tangent * TIME * 0.018) * 0.5 + 0.5;
+	float contact_patchiness = mix(0.56, 0.86, smoothstep(0.34, 0.66, contact_patch_noise));
+	float fine_contact_level = contact_level * contact_patchiness;
 	float normalized_crest_height = wave_height / max(0.001, sea_height);
 	float crest_rise = smoothstep(2.04, 2.14, normalized_crest_height);
 	float crest_fall = 1.0 - smoothstep(2.23, 2.34, normalized_crest_height);
 	float crest_band = crest_rise * crest_fall;
-	float foam_level = clamp(depth_foam_factor, 0.0, 1.0);
-	vec2 flow_uv = world_vert.xz * 0.5 - wind * TIME * foam_noise_speed * 0.18;
+	float foam_level = clamp(max(depth_foam_factor, fine_contact_level), 0.0, 1.0);
+	vec2 flow_uv = world_vert.xz * 0.5 - wind * TIME * foam_noise_speed * 0.18 + shore_tangent * TIME * 0.018;
 	vec2 warp = vec2(noise(flow_uv), noise(flow_uv + vec2(5.2, 1.3))) * 0.5;
 	vec2 foam_uv = world_vert.xz * foam_noise_scale + warp;
 	float emergence_noise = noise3d(vec3(world_vert.xz * 0.5, TIME * 0.2 * foam_noise_speed));
 	emergence_noise = smoothstep(0.0, 1.0, emergence_noise * 0.5 + 0.5);
-	float effective_emergence = mix(emergence_noise, 1.0, foam_level * 0.18);
+	float effective_emergence = mix(emergence_noise, 1.0, foam_level * 0.72);
 	float foam_noise_value = fbm_voronoi(foam_uv) * effective_emergence;
 	vec2 foam_shadow_uv = (world_vert.xz + foam_edge_offset) * foam_noise_scale + warp;
 	float foam_shadow_value = fbm_voronoi(foam_shadow_uv) * effective_emergence;
-	float foam_mask_primary = foam_level * smoothstep(0.17, 0.47, foam_noise_value);
-	float shadow_shape = foam_level * smoothstep(0.17, 0.47, foam_shadow_value);
+	float combined_foam = foam_noise_value + foam_level;
+	float combined_shadow = foam_shadow_value + foam_level;
+	float foam_mask_primary = foam_level * smoothstep(foam_cutoff + 0.46, foam_cutoff + 0.60, combined_foam);
+	float shadow_shape = foam_level * smoothstep(foam_cutoff + 0.46, foam_cutoff + 0.60, combined_shadow);
 	float foam_mask_shadow = clamp(shadow_shape - foam_mask_primary, 0.0, 1.0);
 	float voronoi_value = 1.0 - sqrt(voronoi(world_vert.xz * voronoi_scale + warp));
 	voronoi_value = smoothstep(0.2, 0.8, voronoi_value);
 	float bubble_alpha = 1.0 - clamp((1.0 - voronoi_value) * voronoi_strength, 0.0, 1.0);
 	float shore_edge_foam = foam_mask_shadow * 0.06;
-	float shore_white_foam = clamp(foam_mask_primary * bubble_alpha * 1.18, 0.0, 1.0);
+	float shore_white_foam = clamp(foam_mask_primary * bubble_alpha * 0.92, 0.0, 0.88);
 	ALBEDO = mix(ALBEDO, foam_edge_color, shore_edge_foam);
 	ALBEDO = mix(ALBEDO, foam_color, shore_white_foam);
 
-	// Thin intersection foam, following the tutorial's depth-mask + warped
-	// Voronoi construction. Our generated signed distance is more stable than
-	// screen depth for the procedural coast, so use it to keep the contact band
-	// narrow while the foam texture itself deforms and flows.
-	float land_depth = texture(map_depth_texture, map_uv).g;
-	float contact_distance = max(map_depth, land_depth);
-	vec2 shore_tangent = vec2(-shore_gradient.y, shore_gradient.x);
-	float lace_phase = sin(TIME * 0.30 + noise(world_vert.xz * 0.065 + vec2(28.0, -11.0)) * 1.8) * 0.5 + 0.5;
-	float lace_depth_width = mix(0.0060, 0.0105, lace_phase);
-	float contact_lace = 1.0 - smoothstep(0.0010, lace_depth_width, contact_distance);
-	vec2 lace_flow = shore_tangent * TIME * 0.022 - wind * TIME * 0.008;
-	vec2 lace_warp_uv = world_vert.xz * 0.72 + lace_flow;
-	vec2 lace_warp = vec2(
-		noise(lace_warp_uv),
-		noise(lace_warp_uv + vec2(5.2, 1.3))
-	) * 0.32;
-	float lace_noise = fbm_voronoi((world_vert.xz + lace_flow) * 5.8 + lace_warp);
-	float lace_combined = lace_noise + contact_lace * 0.94;
-	float lace_silhouette = smoothstep(0.91, 1.08, lace_combined) * contact_lace;
-	float lace_patches = noise(world_vert.xz * 0.16 + lace_flow * 0.7) * 0.5 + 0.5;
-	lace_patches = mix(0.30, 1.0, smoothstep(0.38, 0.64, lace_patches));
-	float lace_bubbles = 1.0 - sqrt(voronoi((world_vert.xz + lace_flow) * 24.0 + lace_warp));
-	lace_bubbles = smoothstep(0.16, 0.76, lace_bubbles);
-	float beach_lace_foam = clamp(lace_silhouette * lace_patches * mix(0.48, 1.0, lace_bubbles) * 0.62, 0.0, 0.62);
-	ALBEDO = mix(ALBEDO, foam_thin_color, beach_lace_foam);
+	float beach_lace_foam = shore_white_foam * fine_contact_level;
 
 	// Whitecaps have two wind-driven parts: bright breaking caps locked to high
 	// crests, and thinner residual foam advected into long streaks downwind.
