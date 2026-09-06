@@ -1,20 +1,16 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource path="res://scripts/main.gd" type="Script" id="1_main"]
 [ext_resource path="res://scripts/map_renderer.gd" type="Script" id="2_renderer"]
 [ext_resource path="res://scripts/game_camera.gd" type="Script" id="3_camera"]
 [ext_resource path="res://scripts/test_unit.gd" type="Script" id="4_unit"]
+[ext_resource path="res://shaders/sky_clouds.gdshader" type="Shader" id="5_sky"]
 
-[sub_resource type="ProceduralSkyMaterial" id="ProceduralSky_water"]
-sky_top_color = Color(0.055, 0.13, 0.19, 1)
-sky_horizon_color = Color(0.42, 0.63, 0.67, 1)
-ground_bottom_color = Color(0.025, 0.055, 0.065, 1)
-ground_horizon_color = Color(0.30, 0.45, 0.43, 1)
-sun_angle_max = 18.0
-sun_curve = 0.08
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_cloud_sky"]
+shader = ExtResource("5_sky")
 
 [sub_resource type="Sky" id="Sky_water"]
-sky_material = SubResource("ProceduralSky_water")
+sky_material = SubResource("ShaderMaterial_cloud_sky")
 radiance_size = 3
 
 [sub_resource type="Environment" id="Environment_main"]

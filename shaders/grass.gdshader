@@ -1,12 +1,20 @@
 shader_type spatial;
 render_mode cull_disabled, unshaded;
 
+#include "res://shaders/cloud_common.gdshaderinc"
+
 uniform sampler2D grass_texture : repeat_enable, filter_nearest;
 uniform sampler2D shore_distance_texture : filter_linear, repeat_disable;
 uniform float texture_scale = 0.095;
 uniform float map_world_size = 104.0;
 uniform vec3 wet_sand_color : source_color = vec3(0.48, 0.38, 0.22);
 uniform vec3 dry_sand_color : source_color = vec3(0.76, 0.63, 0.38);
+uniform vec2 cloud_wind_direction = vec2(0.91, 0.41);
+uniform float cloud_scale : hint_range(0.005, 0.2, 0.001) = 0.035;
+uniform float cloud_speed : hint_range(0.0, 2.0, 0.01) = 0.32;
+uniform float cloud_coverage : hint_range(0.0, 1.0, 0.01) = 0.53;
+uniform float cloud_shadow_strength : hint_range(0.0, 1.0, 0.01) = 0.24;
+uniform vec3 cloud_shadow_tint : source_color = vec3(0.50, 0.64, 0.68);
 
 varying vec3 world_position;
 
@@ -50,6 +58,11 @@ void fragment() {
 	float irregular_transition = smoothstep(0.18, 0.82, sand_detail);
 	sand_to_grass = clamp(sand_to_grass + (irregular_transition - 0.5) * 0.18, 0.0, 1.0);
 	ALBEDO = mix(sand, grass, sand_to_grass);
+	float cloud_shadow = projected_cloud_density(
+		world_position.xz, TIME, cloud_wind_direction,
+		cloud_scale, cloud_speed, cloud_coverage
+	);
+	ALBEDO *= mix(vec3(1.0), cloud_shadow_tint, cloud_shadow * cloud_shadow_strength);
 	ROUGHNESS = 0.94;
 	SPECULAR = 0.16;
 }
