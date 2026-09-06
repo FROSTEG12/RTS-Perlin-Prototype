@@ -7,7 +7,7 @@ uniform float thickness : hint_range(10.0, 100.0, 1.0) = 48.0;
 uniform float absorption : hint_range(0.1, 2.0, 0.01) = 0.72;
 uniform vec3 sun_direction = vec3(0.47, 0.72, 0.51);
 uniform vec2 cloud_wind_direction = vec2(0.91, 0.41);
-uniform float cloud_speed : hint_range(0.0, 2.0, 0.01) = 0.32;
+uniform float cloud_speed : hint_range(0.0, 2.0, 0.01) = 0.68;
 
 const int MARCH_STEPS = 8;
 
