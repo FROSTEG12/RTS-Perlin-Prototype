@@ -10,11 +10,11 @@ uniform float map_world_size = 104.0;
 uniform vec3 wet_sand_color : source_color = vec3(0.48, 0.38, 0.22);
 uniform vec3 dry_sand_color : source_color = vec3(0.76, 0.63, 0.38);
 uniform vec2 cloud_wind_direction = vec2(0.91, 0.41);
-uniform float cloud_shadow_scale : hint_range(0.005, 0.2, 0.001) = 0.095;
-uniform float cloud_shadow_speed : hint_range(0.0, 2.0, 0.01) = 0.24;
-uniform float cloud_shadow_coverage : hint_range(0.0, 1.0, 0.01) = 0.65;
-uniform float cloud_shadow_strength : hint_range(0.0, 1.0, 0.01) = 0.86;
-uniform vec3 cloud_shadow_tint : source_color = vec3(0.24, 0.31, 0.35);
+uniform float cloud_shadow_scale : hint_range(0.005, 0.2, 0.001) = 0.085;
+uniform float cloud_shadow_speed : hint_range(0.0, 2.0, 0.01) = 0.18;
+uniform float cloud_shadow_coverage : hint_range(0.0, 1.0, 0.01) = 0.64;
+uniform float cloud_shadow_strength : hint_range(0.0, 1.0, 0.01) = 0.58;
+uniform vec3 cloud_shadow_tint : source_color = vec3(0.46, 0.52, 0.53);
 
 varying vec3 world_position;
 

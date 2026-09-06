@@ -35,5 +35,7 @@ float projected_cloud_density(
 		point = rotation * point * 2.13 + vec2(5.7, -3.9);
 		amplitude *= 0.48;
 	}
-	return smoothstep(coverage, coverage + 0.13, value);
+	// A wide threshold creates the soft penumbra expected from clouds high above
+	// the terrain, while the FBM core keeps a clearly readable darker centre.
+	return smoothstep(coverage - 0.035, coverage + 0.20, value);
 }
