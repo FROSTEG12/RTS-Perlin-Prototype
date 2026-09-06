@@ -219,6 +219,12 @@ void vertex() {
 	vec3 original_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vec3 sample_position = vec3(original_world.x, 0.0, original_world.z);
 	wave_height = -map(sample_position, TIME);
+	vec2 vertex_map_uv = original_world.xz / map_world_size + vec2(0.5);
+	float vertex_shore_depth = texture(map_depth_texture, vertex_map_uv).r;
+	float runup_envelope = 1.0 - smoothstep(0.0, 0.085, vertex_shore_depth);
+	float runup_phase = fract(vertex_shore_depth * shore_wave_frequency + TIME * shore_wave_speed);
+	float runup_pulse = smoothstep(0.50, 0.68, runup_phase) * (1.0 - smoothstep(0.84, 0.98, runup_phase));
+	wave_height += runup_envelope * runup_pulse * 0.040;
 	VERTEX.y += wave_height;
 	world_vert = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float eps = 0.04;

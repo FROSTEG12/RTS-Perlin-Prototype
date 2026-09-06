@@ -123,7 +123,11 @@ func _build_smooth_land_mesh() -> ArrayMesh:
 				continue
 			var first := vertices.size()
 			for point in clipped:
-				vertices.append(point)
+				var terrain_point := point
+				var coast_density := _sample_land_density(point.x, point.z)
+				var beach_rise := smoothstep(COAST_THRESHOLD, 0.76, coast_density)
+				terrain_point.y = lerpf(WATER_Y - 0.035, LAND_Y, beach_rise)
+				vertices.append(terrain_point)
 				normals.append(Vector3.UP)
 				uvs.append(Vector2(point.x, point.z) * 0.095)
 			for triangle_index in range(1, clipped.size() - 1):
