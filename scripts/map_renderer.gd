@@ -14,6 +14,7 @@ const GRASS_SHADER := preload("res://shaders/grass.gdshader")
 const TERRAIN_SHADOW_RECEIVER_SHADER := preload("res://shaders/terrain_shadow_receiver.gdshader")
 const GRASS_TEXTURE := preload("res://assets/tiles/grass_surface.png")
 const TREE_RESOURCES := preload("res://scripts/tree_resources.gd")
+const WORLD_EDGE := preload("res://scripts/world_edge.gd")
 const CAUSTICS_TEXTURE := preload("res://assets/water/caustics_pack/caustics/caust00.png")
 
 const RESOURCE_COLORS := {
@@ -65,6 +66,7 @@ func set_world(new_cells: PackedByteArray, new_size: int, new_resources: Array[D
 	seabed.mesh = null
 	_build_water()
 	_build_resources()
+	WORLD_EDGE.build(self)
 
 
 func cell_to_world(cell_x: int, cell_y: int) -> Vector3:
