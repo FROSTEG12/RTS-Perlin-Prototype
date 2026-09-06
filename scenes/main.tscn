@@ -1,10 +1,11 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource path="res://scripts/main.gd" type="Script" id="1_main"]
 [ext_resource path="res://scripts/map_renderer.gd" type="Script" id="2_renderer"]
 [ext_resource path="res://scripts/game_camera.gd" type="Script" id="3_camera"]
 [ext_resource path="res://scripts/test_unit.gd" type="Script" id="4_unit"]
 [ext_resource path="res://shaders/sky_clouds.gdshader" type="Shader" id="5_sky"]
+[ext_resource path="res://shaders/low_clouds.gdshader" type="Shader" id="6_low_clouds"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_cloud_sky"]
 shader = ExtResource("5_sky")
@@ -12,6 +13,14 @@ shader = ExtResource("5_sky")
 [sub_resource type="Sky" id="Sky_water"]
 sky_material = SubResource("ShaderMaterial_cloud_sky")
 radiance_size = 3
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_low_clouds"]
+render_priority = 4
+shader = ExtResource("6_low_clouds")
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_low_clouds"]
+material = SubResource("ShaderMaterial_low_clouds")
+size = Vector2(180, 180)
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
@@ -46,6 +55,11 @@ light_color = Color(1, 0.91, 0.74, 1)
 light_energy = 0.92
 shadow_enabled = false
 directional_shadow_max_distance = 80.0
+
+[node name="LowCloudLayer" type="MeshInstance3D" parent="."]
+position = Vector3(0, 6.5, 0)
+cast_shadow = 0
+mesh = SubResource("PlaneMesh_low_clouds")
 
 [node name="MapRenderer" type="Node3D" parent="."]
 script = ExtResource("2_renderer")
