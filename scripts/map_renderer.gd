@@ -80,6 +80,8 @@ func _build_terrain() -> void:
 	var material := ShaderMaterial.new()
 	material.shader = GRASS_SHADER
 	material.set_shader_parameter("grass_texture", GRASS_TEXTURE)
+	material.set_shader_parameter("shore_distance_texture", water_depth_texture)
+	material.set_shader_parameter("map_world_size", map_size * CELL_SIZE)
 	terrain.material_override = material
 
 
@@ -380,15 +382,33 @@ func _build_water_depths() -> PackedFloat32Array:
 func _create_water_depth_texture() -> ImageTexture:
 	const RESOLUTION := 4
 	var texture_size := map_size * RESOLUTION
-	var distances := PackedFloat32Array()
-	distances.resize(texture_size * texture_size)
+	var water_distances := PackedFloat32Array()
+	var land_distances := PackedFloat32Array()
+	water_distances.resize(texture_size * texture_size)
+	land_distances.resize(texture_size * texture_size)
 	var far := float(texture_size * 2)
 	for y in range(texture_size):
 		for x in range(texture_size):
 			var world_x := (float(x) + 0.5) / RESOLUTION - map_size * 0.5
 			var world_z := (float(y) + 0.5) / RESOLUTION - map_size * 0.5
 			var is_visual_land := _sample_land_density(world_x, world_z) >= COAST_THRESHOLD
-			distances[y * texture_size + x] = 0.0 if is_visual_land else far
+			water_distances[y * texture_size + x] = 0.0 if is_visual_land else far
+			land_distances[y * texture_size + x] = far if is_visual_land else 0.0
+	water_distances = _distance_transform(water_distances, texture_size)
+	land_distances = _distance_transform(land_distances, texture_size)
+	var image := Image.create(texture_size, texture_size, false, Image.FORMAT_RGBA8)
+	for y in range(texture_size):
+		for x in range(texture_size):
+			var water_distance := water_distances[y * texture_size + x]
+			var land_distance := land_distances[y * texture_size + x]
+			var water_value := clampf((water_distance - 0.5) / (7.0 * RESOLUTION), 0.0, 1.0)
+			var land_value := clampf((land_distance - 0.5) / (7.0 * RESOLUTION), 0.0, 1.0)
+			image.set_pixel(x, y, Color(water_value, land_value, 0.0, 1.0))
+	return ImageTexture.create_from_image(image)
+
+
+func _distance_transform(source: PackedFloat32Array, texture_size: int) -> PackedFloat32Array:
+	var distances := source
 	var diagonal := 1.41421356
 	for y in range(texture_size):
 		for x in range(texture_size):
@@ -410,10 +430,4 @@ func _create_water_depth_texture() -> ImageTexture:
 				distances[index] = minf(distances[index], distances[index + texture_size] + 1.0)
 				if x > 0: distances[index] = minf(distances[index], distances[index + texture_size - 1] + diagonal)
 				if x < texture_size - 1: distances[index] = minf(distances[index], distances[index + texture_size + 1] + diagonal)
-	var image := Image.create(texture_size, texture_size, false, Image.FORMAT_RGBA8)
-	for y in range(texture_size):
-		for x in range(texture_size):
-			var distance := distances[y * texture_size + x]
-			var value := clampf((distance - 0.5) / (7.0 * RESOLUTION), 0.0, 1.0)
-			image.set_pixel(x, y, Color(value, value, value, 1.0))
-	return ImageTexture.create_from_image(image)
+	return distances
