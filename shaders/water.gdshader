@@ -34,9 +34,9 @@ uniform float metallic : hint_range(0.0, 1.0) = 0.0;
 uniform float specular : hint_range(0.0, 1.0) = 0.48;
 
 uniform sampler2D caustics_texture : filter_linear_mipmap, repeat_enable;
-uniform float caustics_scale : hint_range(0.1, 10.0, 0.1) = 2.8;
+uniform float caustics_scale : hint_range(0.1, 10.0, 0.1) = 2.0;
 uniform float caustics_speed : hint_range(0.0, 1.0, 0.01) = 0.10;
-uniform float caustics_intensity : hint_range(0.0, 2.0, 0.1) = 0.34;
+uniform float caustics_intensity : hint_range(0.0, 2.0, 0.1) = 0.16;
 uniform float caustics_depth_fade : hint_range(0.0, 1.0, 0.01) = 0.62;
 
 uniform vec3 foam_color : source_color = vec3(0.96, 1.0, 0.98);
@@ -264,19 +264,14 @@ void fragment() {
 		distorted_background_depth = background_linear_depth;
 	}
 
-	vec3 screen_color = texture(SCREEN_TEXTURE, distorted_uv).rgb;
+	vec3 raw_screen_color = texture(SCREEN_TEXTURE, distorted_uv).rgb;
+	vec3 screen_color = raw_screen_color;
 	// Compatibility rendering can return a nearly black screen sample over an
 	// opaque procedural seabed. Preserve the refracted sample but keep a real
 	// seabed colour underneath it.
 	screen_color = mix(vec3(0.24, 0.38, 0.32), screen_color, 0.62);
 	thickness = max(0.0, distorted_background_depth - water_linear_depth);
 
-	vec4 background_ndc = vec4(distorted_uv * 2.0 - 1.0, texture(DEPTH_TEXTURE, distorted_uv).x, 1.0);
-	#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
-		background_ndc.z = background_ndc.z * 2.0 - 1.0;
-	#endif
-	vec4 background_world = INV_VIEW_MATRIX * INV_PROJECTION_MATRIX * background_ndc;
-	vec3 background_world_position = background_world.xyz / background_world.w;
 	// DEPTH_TEXTURE still drives refraction and intersection rejection above.
 	// Compatibility depth loses too much precision for a steep orthographic
 	// camera, so volume absorption uses the generator's full-float bathymetry.
@@ -288,16 +283,24 @@ void fragment() {
 	float seabed_variation = noise(world_vert.xz * 0.11 + vec2(17.0, -23.0));
 	depth_ratio = clamp(depth_ratio + seabed_variation * 0.025 * smoothstep(0.08, 0.72, depth_ratio), 0.0, 1.0);
 	if (thickness > 0.0) {
-		vec2 caustics_uv1 = background_world_position.xz * caustics_scale;
+		// Anchor caustics directly in world XZ. Reconstructing their position
+		// from the screen depth made the pattern swim when the camera moved.
+		vec2 caustics_world = world_vert.xz;
+		vec2 caustics_rotated = vec2(
+			caustics_world.x * 0.82 + caustics_world.y * 0.57,
+			-caustics_world.x * 0.57 + caustics_world.y * 0.82
+		);
+		vec2 caustics_uv1 = caustics_world * caustics_scale;
 		caustics_uv1.x += TIME * caustics_speed;
-		vec2 caustics_uv2 = background_world_position.xz * caustics_scale * 0.7;
+		vec2 caustics_uv2 = caustics_rotated * caustics_scale * 0.71;
 		caustics_uv2.y -= TIME * caustics_speed * 0.8;
 		float caustics_sample1 = texture(caustics_texture, caustics_uv1).r;
 		float caustics_sample2 = texture(caustics_texture, caustics_uv2).r;
 		float caustics_value = caustics_sample1 * caustics_sample2;
-		float caustics_fade = 1.0 - smoothstep(0.08, 0.68, thickness);
+		float caustics_emergence = smoothstep(0.07, 0.18, thickness);
+		float caustics_fade = 1.0 - smoothstep(0.38, 1.05, thickness);
 		float caustics_patchiness = mix(0.58, 1.0, noise(world_vert.xz * 0.16 + vec2(9.0, -14.0)) * 0.5 + 0.5);
-		screen_color += caustics_value * caustics_intensity * caustics_fade * caustics_patchiness;
+		screen_color += caustics_value * caustics_intensity * caustics_emergence * caustics_fade * caustics_patchiness;
 	}
 
 	vec3 transmittance = exp(-thickness * water_absorption);
@@ -306,6 +309,11 @@ void fragment() {
 	ALBEDO = mix(underwater_fog_color, apparent_seabed_color, transmittance);
 	vec3 readable_depth_color = mix(shallow_surface_color, deep_surface_color, depth_ratio);
 	ALBEDO = mix(ALBEDO, readable_depth_color, 0.12);
+	// At the contact line the water column is optically thin: reveal the wet
+	// sand first, then introduce the water tint continuously across the shelf.
+	float shore_volume_presence = smoothstep(0.035, 0.16, thickness);
+	vec3 submerged_sand = mix(vec3(0.48, 0.38, 0.22), raw_screen_color, 0.30);
+	ALBEDO = mix(submerged_sand, ALBEDO, shore_volume_presence);
 	float normalized_wave_height = clamp(wave_height / max(0.001, sea_height * 2.45), 0.0, 1.0);
 	ALBEDO *= mix(0.88, 1.10, normalized_wave_height);
 	float fresnel = pow(1.0 - clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0), 3.0);

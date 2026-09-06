@@ -54,7 +54,9 @@ func set_world(new_cells: PackedByteArray, new_size: int, new_resources: Array[D
 	generated_seabed_depths = bathymetry["depth"]
 	water_depth_texture = _create_water_depth_texture()
 	_build_terrain()
-	_build_seabed()
+	# Terrain now includes the underwater shelf and basin as one continuous
+	# surface. Keeping the legacy seabed would create a visible coastal seam.
+	seabed.mesh = null
 	_build_water()
 	_build_resources()
 
@@ -83,13 +85,72 @@ func get_half_extent() -> float:
 
 
 func _build_terrain() -> void:
-	terrain.mesh = _build_smooth_land_mesh()
+	terrain.mesh = _build_continuous_ground_mesh()
 	var material := ShaderMaterial.new()
 	material.shader = GRASS_SHADER
 	material.set_shader_parameter("grass_texture", GRASS_TEXTURE)
 	material.set_shader_parameter("shore_distance_texture", water_depth_texture)
 	material.set_shader_parameter("map_world_size", map_size * CELL_SIZE)
 	terrain.material_override = material
+
+
+func _build_continuous_ground_mesh() -> ArrayMesh:
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	var fine_size := map_size * SEABED_SUBDIVISIONS
+	var row_size := fine_size + 1
+	var step := CELL_SIZE / SEABED_SUBDIVISIONS
+	var map_min := -map_size * CELL_SIZE * 0.5
+	var heights := PackedFloat32Array()
+	heights.resize(row_size * row_size)
+
+	for grid_y in range(row_size):
+		for grid_x in range(row_size):
+			var world_x := map_min + grid_x * step
+			var world_z := map_min + grid_y * step
+			heights[grid_y * row_size + grid_x] = _ground_surface_y(world_x, world_z)
+
+	for grid_y in range(row_size):
+		for grid_x in range(row_size):
+			var index := grid_y * row_size + grid_x
+			var world_x := map_min + grid_x * step
+			var world_z := map_min + grid_y * step
+			vertices.append(Vector3(world_x, heights[index], world_z))
+			uvs.append(Vector2(world_x, world_z) * 0.095)
+			var left_x := maxi(0, grid_x - 1)
+			var right_x := mini(fine_size, grid_x + 1)
+			var down_y := maxi(0, grid_y - 1)
+			var up_y := mini(fine_size, grid_y + 1)
+			var height_left := heights[grid_y * row_size + left_x]
+			var height_right := heights[grid_y * row_size + right_x]
+			var height_down := heights[down_y * row_size + grid_x]
+			var height_up := heights[up_y * row_size + grid_x]
+			normals.append(Vector3(
+				height_left - height_right,
+				step * 2.0,
+				height_down - height_up
+			).normalized())
+
+	for grid_y in range(fine_size):
+		for grid_x in range(fine_size):
+			var first := grid_y * row_size + grid_x
+			indices.append_array(PackedInt32Array([
+				first, first + row_size + 1, first + 1,
+				first, first + row_size, first + row_size + 1,
+			]))
+	return _arrays_to_mesh(vertices, normals, uvs, indices)
+
+
+func _ground_surface_y(world_x: float, world_z: float) -> float:
+	var land_density := _sample_land_density(world_x, world_z)
+	if land_density >= COAST_THRESHOLD:
+		var beach_rise := smoothstep(COAST_THRESHOLD, 0.76, land_density)
+		return lerpf(WATER_Y - 0.035, LAND_Y, beach_rise)
+	# Generator bathymetry starts at exactly the same height at the waterline,
+	# then continues downward. There is no second mesh and no vertical break.
+	return WATER_Y - _sample_generated_field(generated_seabed_depths, world_x, world_z, 0.035)
 
 
 func _build_smooth_land_mesh() -> ArrayMesh:

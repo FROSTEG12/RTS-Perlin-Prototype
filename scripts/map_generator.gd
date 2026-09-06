@@ -219,13 +219,16 @@ func _generate_bathymetry(cells: PackedByteArray, map_size: int, seed_value: int
 			)
 			# A shallow sandy shelf first, then a broad continental slope. Noise
 			# only shapes the basin, so it cannot cut terraces into the shoreline.
-			var shelf := smoothstep(0.0, 3.4, distance_world)
+			# A fractional-power profile starts descending immediately instead of
+			# leaving a constant-width, constant-depth ribbon around every coast.
+			var shelf := pow(clampf(distance_world / 4.6, 0.0, 1.0), 0.72)
 			var basin := smoothstep(1.6, 10.5, distance_world)
 			var world_x := (float(x) + 0.5) / BATHYMETRY_RESOLUTION - map_size * 0.5
 			var world_y := (float(y) + 0.5) / BATHYMETRY_RESOLUTION - map_size * 0.5
 			var floor_noise := _fractal_noise(world_x / 18.0 + 43.0, world_y / 18.0 - 29.0, floor_permutation)
 			var irregularity := floor_noise * 0.18 * smoothstep(2.2, 7.0, distance_world)
-			depth[index] = clampf(0.04 + shelf * 0.58 + basin * 1.58 + irregularity, 0.04, BATHYMETRY_MAX_DEPTH)
+			var shore_irregularity := floor_noise * 0.055 * smoothstep(0.18, 1.2, distance_world) * (1.0 - smoothstep(3.2, 6.0, distance_world))
+			depth[index] = clampf(0.035 + shelf * 0.58 + basin * 1.58 + irregularity + shore_irregularity, 0.035, BATHYMETRY_MAX_DEPTH)
 	return {
 		"resolution": BATHYMETRY_RESOLUTION,
 		"max_depth": BATHYMETRY_MAX_DEPTH,
