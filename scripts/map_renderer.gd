@@ -5,6 +5,8 @@ const CELL_SIZE := 1.0
 const LAND_Y := 0.0
 const WATER_Y := -0.16
 const MAX_SEABED_DEPTH := 2.2
+const COAST_SUBDIVISIONS := 4
+const COAST_THRESHOLD := 0.5
 const WATER_SHADER := preload("res://shaders/water.gdshader")
 const GRASS_SHADER := preload("res://shaders/grass.gdshader")
 const GRASS_TEXTURE := preload("res://assets/tiles/grass_surface.png")
@@ -74,11 +76,111 @@ func get_half_extent() -> float:
 
 
 func _build_terrain() -> void:
-	terrain.mesh = _build_cell_mesh(false, LAND_Y)
+	terrain.mesh = _build_smooth_land_mesh()
 	var material := ShaderMaterial.new()
 	material.shader = GRASS_SHADER
 	material.set_shader_parameter("grass_texture", GRASS_TEXTURE)
 	terrain.material_override = material
+
+
+func _build_smooth_land_mesh() -> ArrayMesh:
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	var fine_size := map_size * COAST_SUBDIVISIONS
+	var step := CELL_SIZE / COAST_SUBDIVISIONS
+	var map_min := -map_size * CELL_SIZE * 0.5
+	var density_grid := PackedFloat32Array()
+	density_grid.resize((fine_size + 1) * (fine_size + 1))
+	for grid_y in range(fine_size + 1):
+		for grid_x in range(fine_size + 1):
+			var sample_x := map_min + grid_x * step
+			var sample_z := map_min + grid_y * step
+			density_grid[grid_y * (fine_size + 1) + grid_x] = _sample_land_density(sample_x, sample_z)
+	for fine_y in range(fine_size):
+		for fine_x in range(fine_size):
+			var x0 := map_min + fine_x * step
+			var z0 := map_min + fine_y * step
+			var x1 := x0 + step
+			var z1 := z0 + step
+			var polygon: Array[Vector3] = [
+				Vector3(x0, LAND_Y, z0),
+				Vector3(x1, LAND_Y, z0),
+				Vector3(x1, LAND_Y, z1),
+				Vector3(x0, LAND_Y, z1),
+			]
+			var values: Array[float] = [
+				density_grid[fine_y * (fine_size + 1) + fine_x],
+				density_grid[fine_y * (fine_size + 1) + fine_x + 1],
+				density_grid[(fine_y + 1) * (fine_size + 1) + fine_x + 1],
+				density_grid[(fine_y + 1) * (fine_size + 1) + fine_x],
+			]
+			var clipped := _clip_density_polygon(polygon, values)
+			if clipped.size() < 3:
+				continue
+			var first := vertices.size()
+			for point in clipped:
+				vertices.append(point)
+				normals.append(Vector3.UP)
+				uvs.append(Vector2(point.x, point.z) * 0.095)
+			for triangle_index in range(1, clipped.size() - 1):
+				indices.append_array(PackedInt32Array([
+					first, first + triangle_index + 1, first + triangle_index,
+				]))
+	return _arrays_to_mesh(vertices, normals, uvs, indices)
+
+
+func _clip_density_polygon(points: Array[Vector3], values: Array[float]) -> Array[Vector3]:
+	var result: Array[Vector3] = []
+	for index in range(points.size()):
+		var previous_index := (index - 1 + points.size()) % points.size()
+		var previous_point := points[previous_index]
+		var current_point := points[index]
+		var previous_value := values[previous_index]
+		var current_value := values[index]
+		var previous_inside := previous_value >= COAST_THRESHOLD
+		var current_inside := current_value >= COAST_THRESHOLD
+		if previous_inside != current_inside:
+			var amount := (COAST_THRESHOLD - previous_value) / (current_value - previous_value)
+			result.append(previous_point.lerp(current_point, amount))
+		if current_inside:
+			result.append(current_point)
+	return result
+
+
+func _sample_land_density(world_x: float, world_z: float) -> float:
+	var center := (map_size - 1) * 0.5
+	var warp_x := sin(world_z * 0.37 + world_x * 0.11) * 0.13 + sin(world_z * 0.83 - world_x * 0.19) * 0.045
+	var warp_z := sin(world_x * 0.41 - world_z * 0.09) * 0.13 + sin(world_x * 0.91 + world_z * 0.17) * 0.045
+	var grid_x := (world_x + warp_x) / CELL_SIZE + center
+	var grid_y := (world_z + warp_z) / CELL_SIZE + center
+	var base_x := floori(grid_x)
+	var base_y := floori(grid_y)
+	var weights_x := _cubic_weights(grid_x - base_x)
+	var weights_y := _cubic_weights(grid_y - base_y)
+	var density := 0.0
+	for offset_y in range(4):
+		for offset_x in range(4):
+			density += _land_value(base_x + offset_x - 1, base_y + offset_y - 1) * weights_x[offset_x] * weights_y[offset_y]
+	return density
+
+
+func _cubic_weights(amount: float) -> PackedFloat32Array:
+	var amount_squared := amount * amount
+	var amount_cubed := amount_squared * amount
+	return PackedFloat32Array([
+		pow(1.0 - amount, 3.0) / 6.0,
+		(3.0 * amount_cubed - 6.0 * amount_squared + 4.0) / 6.0,
+		(-3.0 * amount_cubed + 3.0 * amount_squared + 3.0 * amount + 1.0) / 6.0,
+		amount_cubed / 6.0,
+	])
+
+
+func _land_value(cell_x: int, cell_y: int) -> float:
+	if cell_x < 0 or cell_y < 0 or cell_x >= map_size or cell_y >= map_size:
+		return 0.0
+	return 1.0 if cells[cell_y * map_size + cell_x] == 0 else 0.0
 
 
 func _build_seabed() -> void:
@@ -136,7 +238,11 @@ func _build_water() -> void:
 
 
 func _touches_water(cell_x: int, cell_y: int) -> bool:
-	for offset in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+	for offset in [
+		Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1),
+		Vector2i(-1, 0), Vector2i(1, 0),
+		Vector2i(-1, 1), Vector2i(0, 1), Vector2i(1, 1),
+	]:
 		var neighbor: Vector2i = Vector2i(cell_x, cell_y) + offset
 		if neighbor.x < 0 or neighbor.y < 0 or neighbor.x >= map_size or neighbor.y >= map_size:
 			continue
@@ -279,9 +385,10 @@ func _create_water_depth_texture() -> ImageTexture:
 	var far := float(texture_size * 2)
 	for y in range(texture_size):
 		for x in range(texture_size):
-			var cell_x: int = x / RESOLUTION
-			var cell_y: int = y / RESOLUTION
-			distances[y * texture_size + x] = 0.0 if cells[cell_y * map_size + cell_x] == 0 else far
+			var world_x := (float(x) + 0.5) / RESOLUTION - map_size * 0.5
+			var world_z := (float(y) + 0.5) / RESOLUTION - map_size * 0.5
+			var is_visual_land := _sample_land_density(world_x, world_z) >= COAST_THRESHOLD
+			distances[y * texture_size + x] = 0.0 if is_visual_land else far
 	var diagonal := 1.41421356
 	for y in range(texture_size):
 		for x in range(texture_size):
