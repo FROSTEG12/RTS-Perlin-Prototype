@@ -2,7 +2,6 @@ class_name TestUnit3D
 extends Node3D
 
 const MOVE_SPEED := 2.25
-const UNIT_COLOR := Color("ffd044")
 const PATH_COLOR := Color(1.0, 0.73, 0.08, 0.92)
 
 var grid_cell := Vector2i.ZERO
@@ -17,16 +16,11 @@ func set_trail_wear(provider: Node) -> void:
 func _exit_tree() -> void:
 	if is_instance_valid(trail_wear): trail_wear.forget_unit(get_instance_id())
 
-@onready var body: MeshInstance3D = $Body
+@onready var visual: Node3D = $Visual
 @onready var path_preview: MultiMeshInstance3D = $PathPreview
 
 
 func _ready() -> void:
-	var body_material := StandardMaterial3D.new()
-	body_material.albedo_color = UNIT_COLOR
-	body_material.roughness = 0.42
-	body_material.metallic = 0.05
-	body.material_override = body_material
 	_rebuild_path_preview()
 
 
@@ -36,6 +30,7 @@ func place_on_cell(cell: Vector2i, world_position: Vector3) -> void:
 	position = world_position
 	target_cells.clear()
 	target_positions.clear()
+	visual.reset_pose()
 	_rebuild_path_preview()
 
 
@@ -81,9 +76,12 @@ func cancel_movement(renderer: MapRenderer3D) -> void:
 
 func _process(delta: float) -> void:
 	if target_positions.is_empty():
+		visual.set_motion(Vector3.ZERO, delta)
 		return
 	var before := global_position
+	var local_before := position
 	position = position.move_toward(target_positions[0], MOVE_SPEED * delta)
+	visual.set_motion((position - local_before) / maxf(delta, 0.00001), delta)
 	if position.distance_squared_to(target_positions[0]) <= 0.0001:
 		position = target_positions[0]
 		grid_cell = target_cells[0]
