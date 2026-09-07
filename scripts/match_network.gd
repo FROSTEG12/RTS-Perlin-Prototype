@@ -5,6 +5,10 @@ signal snapshot_received(state: Dictionary)
 signal match_ended(reason: String)
 var server: Node
 var loaded := false
+var timeline = preload("res://scripts/snapshot_timeline.gd").new()
+
+func presentation_time() -> float:
+	return timeline.render_time(Time.get_ticks_usec() / 1000000.0)
 
 @rpc("authority", "call_remote", "reliable")
 func receive_match_ended(reason: String) -> void:
@@ -39,6 +43,8 @@ func _stop() -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func receive_world(state: Dictionary) -> void:
+	timeline.reset()
+	timeline.receive(state.simulation_time, Time.get_ticks_usec() / 1000000.0)
 	world_received.emit(state)
 	loaded = true
 	_ready_for_snapshots.rpc_id(1)
@@ -51,4 +57,5 @@ func _ready_for_snapshots() -> void:
 @rpc("authority", "call_remote", "unreliable_ordered", 1)
 func receive_snapshot(state: Dictionary) -> void:
 	if loaded:
+		timeline.receive(state.simulation_time, Time.get_ticks_usec() / 1000000.0)
 		snapshot_received.emit(state)

@@ -133,10 +133,11 @@ func _process(_delta: float) -> void:
 func snapshot() -> Dictionary:
 	var units: Array = []
 	for p in players.values():
-		units.append({"peer_id": p.peer_id, "spawn_cell": p.spawn_cell, "position": p.position})
+		units.append({"peer_id": p.peer_id, "spawn_cell": p.spawn_cell, "position": p.position,
+			"route": p.path.duplicate()})
 	var weather := {}
 	for key in CLIMATE_FIELDS:
 		weather[key] = climate.get(key)
 	return {"seed": seed_value, "hour": hour, "day": day, "speed": 1.0,
-		"weather": weather, "time": get_node("/root/NetworkTime").time, "tick": tick,
+		"weather": weather, "time": get_node("/root/NetworkTime").time, "tick": tick, "simulation_time": tick * STEP,
 		"ready_count": ready_peers.size(), "players": units}

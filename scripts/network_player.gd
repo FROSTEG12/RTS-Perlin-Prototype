@@ -1,13 +1,13 @@
 class_name NetworkPlayer3D
 extends Node3D
 
-const INTERPOLATION_DELAY := 0.10
 @onready var visual: Node3D = $Visual
 @onready var player_label: Label3D = $PlayerLabel
 var peer_id := 0
 var network_position := Vector3.ZERO
 var local_source: Node3D
 var snapshots: Array[Dictionary] = []
+var route_view: Node3D
 
 func setup(id: int, spawn_position: Vector3, source: Node3D = null) -> void:
 	peer_id = id
@@ -17,6 +17,18 @@ func setup(id: int, spawn_position: Vector3, source: Node3D = null) -> void:
 	player_label.text = "Игрок %d" % id
 	visual.reset_pose()
 	visible = local_source == null
+	if local_source != null:
+		route_view = preload("res://scripts/network_route_view.gd").new()
+		route_view.renderer = local_source.get_parent()
+		local_source.add_child(route_view)
+
+func apply_route(route: Array) -> void:
+	if route_view != null:
+		route_view.set_route(route)
+
+func _exit_tree() -> void:
+	if is_instance_valid(route_view):
+		route_view.queue_free()
 
 func apply_snapshot(world_position: Vector3, sample_time: float) -> void:
 	if not snapshots.is_empty() and sample_time <= float(snapshots.back().time):
@@ -32,11 +44,10 @@ func _process(delta: float) -> void:
 	if snapshots.is_empty():
 		return
 	var before := global_position
-	var clock := get_node("/root/NetworkTime")
-	var render_time: float = clock.time - INTERPOLATION_DELAY
+	var render_time: float = get_node("/root/MatchNetwork").presentation_time()
 	while snapshots.size() > 2 and float(snapshots[1].time) <= render_time:
 		snapshots.pop_front()
-	if snapshots.size() < 2 or not clock.is_initial_sync_done():
+	if snapshots.size() < 2:
 		position = network_position
 	else:
 		var first: Dictionary = snapshots[0]

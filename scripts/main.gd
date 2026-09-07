@@ -438,7 +438,9 @@ func _on_match_snapshot(state: Dictionary) -> void:
 		ids.append(id)
 		player_spawn_cells[id] = p.spawn_cell
 		var player := _ensure_network_player(id, p.position)
-		player.apply_snapshot(p.position, state.time)
+		player.apply_snapshot(p.position, state.simulation_time)
+		if id == multiplayer.get_unique_id():
+			player.apply_route(p.get("route", []))
 	for id in remote_players.keys():
 		if id not in ids:
 			_remove_remote_player(id)

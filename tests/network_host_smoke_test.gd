@@ -5,8 +5,15 @@ var role := "host"
 var initial_positions := {}
 var moved := {}
 var exercised := false
+var moving_frames := 0
+var jogging_frames := 0
+var route_seen := false
+var last_position := Vector3.ZERO
+var first_snapshot_usec := 0
+var first_render_usec := 0
 
 func _initialize() -> void:
+	Engine.max_fps = 60
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--role="):
 			role = arg.trim_prefix("--role=")
@@ -36,6 +43,23 @@ func _observe(state: Dictionary) -> void:
 	for p in state.players:
 		if p.position.distance_to(initial_positions[p.peer_id]) > 0.5:
 			moved[p.peer_id] = true
+		if p.peer_id == root.multiplayer.get_unique_id() and first_snapshot_usec == 0 and p.position.distance_to(initial_positions[p.peer_id]) > 0.001:
+			first_snapshot_usec = Time.get_ticks_usec()
+
+func _process(_delta: float) -> bool:
+	if not exercised or world.local_network_player == null:
+		return false
+	var position: Vector3 = world.test_unit.global_position
+	if position.distance_to(last_position) > 0.001 and last_position != Vector3.ZERO:
+		moving_frames += 1
+		if world.test_unit.visual.player.current_animation == "jog":
+			jogging_frames += 1
+		if first_render_usec == 0 and first_snapshot_usec > 0:
+			first_render_usec = Time.get_ticks_usec()
+	last_position = position
+	if world.local_network_player.route_view.dots.multimesh.instance_count > 0:
+		route_seen = true
+	return false
 
 func _move() -> void:
 	var own_id := root.multiplayer.get_unique_id()
@@ -45,6 +69,10 @@ func _move() -> void:
 			root.get_node("MatchNetwork").move_unit(spawn + offset)
 			break
 	await create_timer(7).timeout
+	assert(moving_frames > 10 and jogging_frames >= moving_frames * 0.9, "Own movement animation must remain running")
+	assert(route_seen, "Server-confirmed route must be visible")
+	assert(first_render_usec > 0 and first_render_usec - first_snapshot_usec < 300000, "Unexpected extra presentation delay")
+	print("PRESENTATION_PASS ", role, " jog=", jogging_frames, "/", moving_frames, " received_to_display_ms=", (first_render_usec - first_snapshot_usec) / 1000.0)
 	assert(moved.size() == 2, "Game windows must see both players move")
 	assert(world.test_unit.global_position.distance_to(initial_positions[own_id]) > 0.5, "Own visible unit must move")
 	assert(world.remote_players.size() == 1)
