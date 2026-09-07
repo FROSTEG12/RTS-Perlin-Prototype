@@ -370,6 +370,7 @@ func _update_network_controls() -> void:
 	network_host_button.disabled = online
 	network_join_button.disabled = online
 	network_leave_button.disabled = not online
+	network_leave_button.text = "Завершить матч" if network_session.server_pid > 0 else "Выйти"
 	network_address.editable = not online
 	new_map_button.disabled = online or is_generating
 	building_button.disabled = online

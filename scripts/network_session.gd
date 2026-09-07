@@ -16,9 +16,12 @@ enum Mode { OFFLINE, CLIENT }
 var mode := Mode.OFFLINE
 var server_pid := -1
 var launching := false
+var lifetime_listener: TCPServer
+var lifetime_connection: StreamPeerTCP
 
 
 func _ready() -> void:
+	get_node("/root/MatchNetwork").match_ended.connect(_on_match_ended)
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -26,7 +29,7 @@ func _ready() -> void:
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
 
 
-func start_host(port: int = DEFAULT_PORT) -> Error:
+func start_host(port: int = DEFAULT_PORT, seed_value: int = -1) -> Error:
 	stop()
 	var probe := ENetMultiplayerPeer.new()
 	var result := probe.create_server(port, MAX_PLAYERS)
@@ -37,9 +40,18 @@ func start_host(port: int = DEFAULT_PORT) -> Error:
 	launching = true
 	mode = Mode.CLIENT
 	status_changed.emit("Запуск отдельного сервера…")
+	lifetime_listener = TCPServer.new()
+	result = lifetime_listener.listen(0, "127.0.0.1")
+	if result != OK:
+		stop()
+		return result
+	if seed_value < 0:
+		seed_value = get_parent().world_seed
 	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
+		"--log-file", ProjectSettings.globalize_path("user://server.log"),
 		"--script", "res://scripts/server_entry.gd", "--", "--port=%d" % port,
-		"--seed=%d" % get_parent().world_seed])
+		"--seed=%d" % seed_value,
+		"--owner-port=%d" % lifetime_listener.get_local_port()])
 	server_pid = OS.create_process(OS.get_executable_path(), args, false)
 	if server_pid <= 0:
 		stop()
@@ -86,11 +98,18 @@ func join_host(address: String, port: int = DEFAULT_PORT) -> Error:
 
 
 func stop() -> void:
-	if launching and server_pid > 0 and OS.is_process_running(server_pid):
-		OS.kill(server_pid)
+	# Closing the local lifetime connection also works when the game process crashes.
+	if lifetime_connection != null:
+		lifetime_connection.disconnect_from_host()
+		lifetime_connection = null
+	if lifetime_listener != null:
+		lifetime_listener.stop()
+		lifetime_listener = null
 	launching = false
 	server_pid = -1
-	get_node("/root/MatchNetwork").loaded = false
+	var bridge := get_node_or_null("/root/MatchNetwork")
+	if bridge != null:
+		bridge.loaded = false
 	if multiplayer.multiplayer_peer != null:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
@@ -138,6 +157,23 @@ func _on_connection_failed() -> void:
 
 
 func _on_server_disconnected() -> void:
-	status_changed.emit("Хост отключился")
 	stop()
 	host_disconnected.emit()
+	status_changed.emit("Соединение с сервером завершено")
+
+
+func _on_match_ended(reason: String) -> void:
+	stop()
+	host_disconnected.emit()
+	status_changed.emit(reason)
+
+
+func _exit_tree() -> void:
+	stop()
+
+
+func _process(_delta: float) -> void:
+	if lifetime_listener != null and lifetime_listener.is_connection_available():
+		lifetime_connection = lifetime_listener.take_connection()
+		lifetime_listener.stop()
+		lifetime_listener = null

@@ -2,8 +2,14 @@ extends Node
 ## Identical autoload path and RPC protocol in the server and every client.
 signal world_received(state: Dictionary)
 signal snapshot_received(state: Dictionary)
+signal match_ended(reason: String)
 var server: Node
 var loaded := false
+
+@rpc("authority", "call_remote", "reliable")
+func receive_match_ended(reason: String) -> void:
+	loaded = false
+	match_ended.emit(reason)
 
 func request_world() -> void:
 	_request_world.rpc_id(1)
