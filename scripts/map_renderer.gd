@@ -13,6 +13,7 @@ const WATER_SHADER := preload("res://shaders/water.gdshader")
 const GRASS_SHADER := preload("res://shaders/grass.gdshader")
 const TERRAIN_SHADOW_RECEIVER_SHADER := preload("res://shaders/terrain_shadow_receiver.gdshader")
 const GRASS_TEXTURE := preload("res://assets/tiles/grass_surface.png")
+const TRAIL_SOIL_TEXTURE := preload("res://assets/world_edge/soil_albedo.png")
 const TREE_RESOURCES := preload("res://scripts/tree_resources.gd")
 const WORLD_EDGE := preload("res://scripts/world_edge.gd")
 const CAUSTICS_TEXTURE := preload("res://assets/water/caustics_pack/caustics/caust00.png")
@@ -35,6 +36,7 @@ var water_depth_texture: ImageTexture
 var terrain_material: ShaderMaterial
 var terrain_shadow_receiver_material: ShaderMaterial
 var water_material: ShaderMaterial
+var trail_wear := preload("res://scripts/trail_wear.gd").new()
 
 @onready var terrain: MeshInstance3D = $Terrain
 @onready var terrain_shadow_receiver: MeshInstance3D = $TerrainShadowReceiver
@@ -60,6 +62,10 @@ func set_world(new_cells: PackedByteArray, new_size: int, new_resources: Array[D
 	visual_land_depths = bathymetry["land_distance"]
 	generated_seabed_depths = bathymetry["depth"]
 	water_depth_texture = _create_water_depth_texture()
+	if trail_wear.get_parent() == null:
+		trail_wear.name = "TrailWear"
+		add_child(trail_wear)
+	trail_wear.configure(map_size * CELL_SIZE, cells, map_size)
 	_build_terrain()
 	# Terrain now includes the underwater shelf and basin as one continuous
 	# surface. Keeping the legacy seabed would create a visible coastal seam.
@@ -109,6 +115,8 @@ func _build_terrain() -> void:
 	terrain_material.set_shader_parameter("grass_texture", GRASS_TEXTURE)
 	terrain_material.set_shader_parameter("shore_distance_texture", water_depth_texture)
 	terrain_material.set_shader_parameter("map_world_size", map_size * CELL_SIZE)
+	terrain_material.set_shader_parameter("trail_wear_texture", trail_wear.texture)
+	terrain_material.set_shader_parameter("trail_soil_texture", TRAIL_SOIL_TEXTURE)
 	terrain.material_override = terrain_material
 	terrain_shadow_receiver.mesh = terrain.mesh
 	terrain_shadow_receiver_material = ShaderMaterial.new()

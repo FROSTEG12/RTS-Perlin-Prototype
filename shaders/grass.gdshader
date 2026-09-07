@@ -5,6 +5,11 @@ render_mode cull_disabled;
 
 uniform sampler2D grass_texture : repeat_enable, filter_nearest;
 uniform sampler2D shore_distance_texture : filter_linear, repeat_disable;
+uniform sampler2D trail_wear_texture : filter_linear, repeat_disable;
+uniform sampler2D trail_soil_texture : repeat_enable, filter_linear_mipmap;
+uniform float trail_pixel_size = 0.08;
+uniform float trail_soil_scale = 0.28;
+uniform bool trails_enabled = true;
 uniform float texture_scale = 0.095;
 uniform float map_world_size = 104.0;
 uniform vec3 wet_sand_color : source_color = vec3(0.69, 0.63, 0.49);
@@ -59,6 +64,24 @@ void fragment() {
 	float irregular_transition = smoothstep(0.18, 0.82, sand_detail);
 	sand_to_grass = clamp(sand_to_grass + (irregular_transition - 0.5) * 0.18, 0.0, 1.0);
 	ALBEDO = mix(sand, grass, sand_to_grass);
+	if (trails_enabled) {
+		float wear = texture(trail_wear_texture, map_uv).r;
+		// Fixed world-space thresholds reveal more pixels as traffic increases.
+		// No TIME/screen-space noise: existing patches never shuffle or sparkle.
+		vec2 pixel_grid = world_position.xz / trail_pixel_size;
+		float threshold = mix(0.10, 0.90, hash21(floor(pixel_grid)));
+		float patches = smoothstep(threshold - 0.075, threshold + 0.075, wear);
+		// Subpixel details converge to coverage when zoomed out, avoiding aliasing.
+		vec2 footprint = fwidth(pixel_grid);
+		float distant = smoothstep(0.7, 1.6, max(footprint.x, footprint.y));
+		float coverage = mix(patches, wear, distant);
+		// Trails replace grass, not beach sand or the submerged seabed.
+		coverage *= smoothstep(0.70, 0.97, sand_to_grass);
+		vec3 soil = texture(trail_soil_texture, world_position.xz * trail_soil_scale).rgb;
+		soil = floor(soil * 24.0 + 0.5) / 24.0;
+		soil *= vec3(1.25, 1.15, 1.0);
+		ALBEDO = mix(ALBEDO, soil, coverage);
+	}
 	float cloud_shadow = projected_cloud_density(
 		world_position.xz + cloud_shadow_offset, TIME, cloud_wind_direction,
 		cloud_shadow_scale, cloud_shadow_speed, cloud_shadow_coverage

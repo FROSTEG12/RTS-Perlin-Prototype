@@ -8,6 +8,14 @@ const PATH_COLOR := Color(1.0, 0.73, 0.08, 0.92)
 var grid_cell := Vector2i.ZERO
 var target_cells: Array[Vector2i] = []
 var target_positions: Array[Vector3] = []
+var trail_wear: Node
+
+func set_trail_wear(provider: Node) -> void:
+	if is_instance_valid(trail_wear): trail_wear.forget_unit(get_instance_id())
+	trail_wear = provider
+
+func _exit_tree() -> void:
+	if is_instance_valid(trail_wear): trail_wear.forget_unit(get_instance_id())
 
 @onready var body: MeshInstance3D = $Body
 @onready var path_preview: MultiMeshInstance3D = $PathPreview
@@ -23,6 +31,7 @@ func _ready() -> void:
 
 
 func place_on_cell(cell: Vector2i, world_position: Vector3) -> void:
+	if is_instance_valid(trail_wear): trail_wear.forget_unit(get_instance_id())
 	grid_cell = cell
 	position = world_position
 	target_cells.clear()
@@ -73,12 +82,15 @@ func cancel_movement(renderer: MapRenderer3D) -> void:
 func _process(delta: float) -> void:
 	if target_positions.is_empty():
 		return
+	var before := global_position
 	position = position.move_toward(target_positions[0], MOVE_SPEED * delta)
 	if position.distance_squared_to(target_positions[0]) <= 0.0001:
 		position = target_positions[0]
 		grid_cell = target_cells[0]
 		target_positions.remove_at(0)
 		target_cells.remove_at(0)
+	if is_instance_valid(trail_wear):
+		trail_wear.record_movement(get_instance_id(), before, global_position)
 	_rebuild_path_preview()
 
 

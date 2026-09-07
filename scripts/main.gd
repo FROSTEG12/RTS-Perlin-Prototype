@@ -27,6 +27,9 @@ var pathfinder := GridPathfinder.new()
 var is_generating := false
 var is_placing_building := false
 var current_time := 8.0
+var current_day := 1
+var simulation_speed := 1.0
+var weather: Node3D
 
 
 func _ready() -> void:
@@ -34,16 +37,28 @@ func _ready() -> void:
 	$UI/MapControls/Margin/Rows/ColorGradeStrength.value_changed.connect(_on_color_grade_strength)
 	_on_color_grade_strength($UI/MapControls/Margin/Rows/ColorGradeStrength.value)
 	world_seed = int(Time.get_unix_time_from_system()) % 2_000_000_000
+	weather = preload("res://scripts/weather_effects.gd").new()
+	weather.name = "Weather"
+	add_child(weather)
+	weather.setup(game_camera, test_unit, world_seed)
+	_setup_weather_controls()
 	time_slider.value_changed.connect(_on_time_slider_changed)
 	_set_time_of_day(current_time)
 	new_map_button.pressed.connect(_on_new_map_pressed)
 	building_button.toggled.connect(_on_building_button_toggled)
 	generate_world()
+	_sync_weather_controls()
 
 
 func _process(delta: float) -> void:
 	var hours_per_second := 24.0 / (MINUTES_PER_DAY * 60.0)
-	_set_time_of_day(fmod(current_time + delta * hours_per_second, 24.0))
+	var game_hours := delta * hours_per_second * simulation_speed
+	# Shared elapsed clock for date, weather and lighting. The lighting slider
+	# is an explicit preview override; it does not fabricate elapsed days.
+	current_day += floori((current_time + game_hours) / 24.0)
+	weather.climate.advance(delta, game_hours, current_time)
+	_set_time_of_day(fmod(current_time + game_hours, 24.0))
+	_sync_weather_controls()
 
 
 func _on_color_grade_toggled(_enabled: bool) -> void:
@@ -70,11 +85,14 @@ func _set_time_of_day(value: float) -> void:
 	time_slider.set_value_no_signal(current_time)
 	var hour := floori(current_time)
 	var minute := floori(fmod(current_time, 1.0) * 60.0)
-	time_label.text = "Время: %02d:%02d" % [hour, minute]
+	time_label.text = "День %d · %02d:%02d" % [current_day, hour, minute]
 
 
 func _apply_day_night_lighting() -> void:
 	DAY_NIGHT_LIGHTING.apply(current_time, key_light, world_environment.environment)
+	preload("res://scripts/tree_resources.gd").update_shadow_direction(map_renderer, -key_light.global_basis.z)
+	if weather != null:
+		weather.update_visuals(current_time, key_light, world_environment.environment)
 	map_renderer.WORLD_EDGE.set_mist_color(map_renderer, world_environment.environment.background_color)
 
 
@@ -99,6 +117,7 @@ func _place_temporary_building(world_position: Vector3) -> void:
 		MapRenderer3D.LAND_Y + 0.02 - bounds.position.y * uniform_scale,
 		world_position.z
 	)
+	weather.refresh_world(map_renderer.get_half_extent())
 
 
 func _normalize_temporary_building_materials(root: Node3D) -> void:
@@ -160,8 +179,63 @@ func generate_world() -> void:
 	))
 	game_camera.configure_map(map_renderer.get_half_extent())
 	var spawn_cell := generator.find_mainland_spawn(current_cells, DEFAULT_MAP_SIZE)
+	test_unit.set_trail_wear(map_renderer.trail_wear)
 	test_unit.place_on_cell(spawn_cell, map_renderer.cell_to_world(spawn_cell.x, spawn_cell.y))
 	seed_label.text = "Seed: %d  •  Вода: %d%%" % [world_seed, int(map_data["water_percent"])]
+	if weather != null:
+		weather.refresh_world(map_renderer.get_half_extent())
+
+
+func _setup_weather_controls() -> void:
+	var rows := $UI/MapControls/Margin/Rows
+	time_slider.tooltip_text = "Проверка освещения: переводит часы, но не проматывает погоду. Для смены погоды используй скорость времени."
+	var speed := OptionButton.new()
+	speed.name = "SimulationSpeed"
+	for value in [1, 3, 6]:
+		speed.add_item("Время ×%d" % value)
+	speed.tooltip_text = "Ускоряет часы, смену дней и погоду вместе. Не ускоряет юнита или анимации."
+	speed.item_selected.connect(func(index: int): simulation_speed = [1.0, 3.0, 6.0][index])
+	rows.add_child(speed)
+	var separator := HSeparator.new()
+	rows.add_child(separator)
+	var automatic := CheckButton.new()
+	automatic.name = "AutoWeather"
+	automatic.text = "Автопогода"
+	automatic.button_pressed = true
+	automatic.toggled.connect(func(enabled: bool): weather.climate.automatic = enabled)
+	rows.add_child(automatic)
+	var rain := CheckButton.new()
+	rain.name = "RainToggle"
+	rain.text = "Дождь"
+	rain.tooltip_text = "Ручное управление дождём. Автопогода отключится; переход занимает несколько секунд."
+	rain.toggled.connect(func(enabled: bool):
+		weather.climate.set_rain(enabled)
+		automatic.set_pressed_no_signal(false))
+	rows.add_child(rain)
+	var fog := CheckButton.new()
+	fog.name = "FogPreview"
+	fog.text = "Туман: тест"
+	fog.tooltip_text = "Показать плотный туман в любое время. Выключение возвращает естественный расчёт."
+	fog.toggled.connect(func(enabled: bool): weather.climate.fog_override = 0.95 if enabled else -1.0)
+	rows.add_child(fog)
+	var focus := Button.new()
+	focus.text = "К юниту"
+	focus.pressed.connect(func():
+		game_camera.global_position = test_unit.global_position + game_camera.global_basis.z * (18.0 / game_camera.global_basis.z.y)
+		game_camera._clamp_position())
+	rows.add_child(focus)
+	var status := Label.new()
+	status.name = "WeatherStatus"
+	status.add_theme_font_size_override("font_size", 12)
+	rows.add_child(status)
+
+
+func _sync_weather_controls() -> void:
+	var rows := $UI/MapControls/Margin/Rows
+	rows.get_node("AutoWeather").set_pressed_no_signal(weather.climate.automatic)
+	var requested_rain: bool = weather.climate.phase == weather.MODEL.Phase.RAIN if weather.climate.automatic else weather.climate.manual_rain
+	rows.get_node("RainToggle").set_pressed_no_signal(requested_rain)
+	rows.get_node("WeatherStatus").text = "%s · Влажность %d%%" % [weather.climate.description(), roundi(weather.climate.moisture * 100.0)]
 
 
 func _on_new_map_pressed() -> void:

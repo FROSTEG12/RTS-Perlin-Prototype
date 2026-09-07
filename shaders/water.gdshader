@@ -35,6 +35,8 @@ uniform vec3 water_absorption : source_color = vec3(0.24, 0.10, 0.07);
 uniform float roughness : hint_range(0.0, 1.0) = 0.24;
 uniform float metallic : hint_range(0.0, 1.0) = 0.0;
 uniform float specular : hint_range(0.0, 1.0) = 0.48;
+// Keep direct-light occlusion readable without black silhouettes on water.
+uniform float water_shadow_strength : hint_range(0.0, 1.0) = 0.52;
 
 uniform sampler2D caustics_texture : filter_linear_mipmap, repeat_enable;
 uniform float caustics_scale : hint_range(0.1, 10.0, 0.1) = 2.0;
@@ -469,4 +471,35 @@ void fragment() {
 	ROUGHNESS = mix(ROUGHNESS, 0.36, edge_blend);
 	SPECULAR = specular;
 	METALLIC = metallic;
+}
+
+// Custom direct lighting retains Burley diffuse and GGX highlights. Only
+// directional diffuse shadow contrast is reduced; night/cloud light energy,
+// ambient, emission, foam and specular occlusion keep their existing inputs.
+// Equations checked against Godot 4.7 scene_forward_lights_inc.glsl.
+float water_fresnel_weight(float cosine) {
+	float m = 1.0 - clamp(cosine, 0.0, 1.0);
+	return m * m * m * m * m;
+}
+
+void light() {
+	float nl = max(dot(NORMAL, LIGHT), 0.0);
+	float nv = max(dot(NORMAL, VIEW), 0.0001);
+	vec3 halfway = normalize(LIGHT + VIEW);
+	float lh = clamp(dot(LIGHT, halfway), 0.0, 1.0);
+	float nh = clamp(dot(NORMAL, halfway), 0.0, 1.0);
+	float grazing = 2.0 * lh * lh * ROUGHNESS - 0.5;
+	float diffuse = nl * (1.0 + grazing * water_fresnel_weight(nl))
+		* (1.0 + grazing * water_fresnel_weight(nv)) / PI;
+	float diffuse_visibility = LIGHT_IS_DIRECTIONAL
+		? mix(1.0, ATTENUATION, water_shadow_strength) : ATTENUATION;
+	DIFFUSE_LIGHT += LIGHT_COLOR * diffuse * diffuse_visibility;
+	float alpha = max(ROUGHNESS * ROUGHNESS, 0.0001);
+	float denominator = max(1.0 - nh * nh + nh * nh * alpha * alpha, 0.000001);
+	float distribution = (alpha / denominator) * (alpha / denominator) / PI;
+	float visibility = clamp(0.5 / max(mix(2.0 * nl * nv, nl + nv, alpha), 0.0001), 0.0, 1.0);
+	vec3 reflectance = mix(vec3(0.16 * specular * specular), ALBEDO, METALLIC);
+	float grazing_reflectance = clamp(dot(reflectance, vec3(16.5)), METALLIC, 1.0);
+	vec3 fresnel = mix(reflectance, vec3(grazing_reflectance), water_fresnel_weight(lh));
+	SPECULAR_LIGHT += LIGHT_COLOR * nl * distribution * visibility * fresnel * ATTENUATION * SPECULAR_AMOUNT;
 }
