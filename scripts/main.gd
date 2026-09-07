@@ -1,13 +1,17 @@
 extends Node3D
 
+signal network_world_synchronized(seed_value: int)
+
 const DEFAULT_MAP_SIZE := 104
 const DEFAULT_SCALE := 34.0
 const DEFAULT_WATER := 40
 const DEFAULT_RESOURCE_DENSITY := 130
 const MINUTES_PER_DAY := 12.0
 const DAY_NIGHT_LIGHTING := preload("res://scripts/day_night_lighting.gd")
+const NETWORK_SESSION := preload("res://scripts/network_session.gd")
 const TEMP_BUILDING_SCENE := preload("res://assets/temporary_building/house4.18.fbx")
 const TEMP_BUILDING_FOOTPRINT := 4.5
+const NETWORK_SNAPSHOT_INTERVAL := 0.1
 
 @onready var map_renderer: MapRenderer3D = $MapRenderer
 @onready var test_unit: TestUnit3D = $MapRenderer/TestUnit
@@ -30,9 +34,26 @@ var current_time := 8.0
 var current_day := 1
 var simulation_speed := 1.0
 var weather: Node3D
+var network_session: NetworkSession
+var network_snapshot_elapsed := 0.0
+var network_address: LineEdit
+var network_host_button: Button
+var network_join_button: Button
+var network_leave_button: Button
+var network_status: Label
 
 
 func _ready() -> void:
+	network_session = NETWORK_SESSION.new()
+	network_session.name = "NetworkSession"
+	add_child(network_session)
+	network_session.status_changed.connect(_on_network_status_changed)
+	network_session.host_started.connect(_on_host_started)
+	network_session.connected_to_host.connect(_on_connected_to_host)
+	network_session.peer_joined.connect(_on_network_peer_joined)
+	network_session.peer_left.connect(_on_network_peer_left)
+	network_session.join_failed.connect(_return_to_offline)
+	network_session.host_disconnected.connect(_return_to_offline)
 	$UI/MapControls/Margin/Rows/ColorGradeToggle.toggled.connect(_on_color_grade_toggled)
 	$UI/MapControls/Margin/Rows/ColorGradeStrength.value_changed.connect(_on_color_grade_strength)
 	_on_color_grade_strength($UI/MapControls/Margin/Rows/ColorGradeStrength.value)
@@ -42,15 +63,20 @@ func _ready() -> void:
 	add_child(weather)
 	weather.setup(game_camera, test_unit, world_seed)
 	_setup_weather_controls()
+	_setup_network_controls()
 	time_slider.value_changed.connect(_on_time_slider_changed)
 	_set_time_of_day(current_time)
 	new_map_button.pressed.connect(_on_new_map_pressed)
 	building_button.toggled.connect(_on_building_button_toggled)
 	generate_world()
+	_update_network_controls()
 	_sync_weather_controls()
 
 
 func _process(delta: float) -> void:
+	if network_session != null and network_session.is_online() and not network_session.is_host():
+		_sync_weather_controls()
+		return
 	var hours_per_second := 24.0 / (MINUTES_PER_DAY * 60.0)
 	var game_hours := delta * hours_per_second * simulation_speed
 	# Shared elapsed clock for date, weather and lighting. The lighting slider
@@ -59,6 +85,11 @@ func _process(delta: float) -> void:
 	weather.climate.advance(delta, game_hours, current_time)
 	_set_time_of_day(fmod(current_time + game_hours, 24.0))
 	_sync_weather_controls()
+	if network_session != null and network_session.is_host():
+		network_snapshot_elapsed += delta
+		if network_snapshot_elapsed >= NETWORK_SNAPSHOT_INTERVAL:
+			network_snapshot_elapsed = fmod(network_snapshot_elapsed, NETWORK_SNAPSHOT_INTERVAL)
+			_broadcast_network_snapshot()
 
 
 func _on_color_grade_toggled(_enabled: bool) -> void:
@@ -97,6 +128,10 @@ func _apply_day_night_lighting() -> void:
 
 
 func _on_building_button_toggled(enabled: bool) -> void:
+	if network_session != null and network_session.is_online():
+		building_button.set_pressed_no_signal(false)
+		is_placing_building = false
+		return
 	is_placing_building = enabled
 	building_button.text = "Кликните по суше…" if enabled else "Поставить дом"
 
@@ -239,7 +274,7 @@ func _sync_weather_controls() -> void:
 
 
 func _on_new_map_pressed() -> void:
-	if is_generating:
+	if is_generating or (network_session != null and network_session.is_online()):
 		return
 	is_generating = true
 	new_map_button.disabled = true
@@ -279,3 +314,175 @@ func _unhandled_input(event: InputEvent) -> void:
 		if not path.is_empty():
 			test_unit.follow_path(path, map_renderer)
 			get_viewport().set_input_as_handled()
+
+
+func _setup_network_controls() -> void:
+	var rows := $UI/MapControls/Margin/Rows
+	rows.add_child(HSeparator.new())
+	var title := Label.new()
+	title.text = "Сетевой прототип"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	rows.add_child(title)
+	network_address = LineEdit.new()
+	network_address.placeholder_text = "IP хоста"
+	network_address.text = "127.0.0.1"
+	network_address.tooltip_text = "IP-адрес компьютера, создавшего матч"
+	rows.add_child(network_address)
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 4)
+	rows.add_child(actions)
+	network_host_button = Button.new()
+	network_host_button.text = "Создать"
+	network_host_button.pressed.connect(func(): network_session.start_host())
+	actions.add_child(network_host_button)
+	network_join_button = Button.new()
+	network_join_button.text = "Войти"
+	network_join_button.pressed.connect(func(): network_session.join_host(network_address.text))
+	actions.add_child(network_join_button)
+	network_leave_button = Button.new()
+	network_leave_button.text = "Выйти"
+	network_leave_button.pressed.connect(_return_to_offline)
+	actions.add_child(network_leave_button)
+	network_status = Label.new()
+	network_status.text = "Автономная игра"
+	network_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	network_status.add_theme_font_size_override("font_size", 11)
+	rows.add_child(network_status)
+
+
+func _on_network_status_changed(message: String) -> void:
+	if network_status != null:
+		network_status.text = message
+	_update_network_controls()
+
+
+func _update_network_controls() -> void:
+	if network_session == null or network_host_button == null:
+		return
+	var online := network_session.is_online()
+	var client := online and not network_session.is_host()
+	network_host_button.disabled = online
+	network_join_button.disabled = online
+	network_leave_button.disabled = not online
+	network_address.editable = not online
+	new_map_button.disabled = online or is_generating
+	building_button.disabled = online
+	var rows := $UI/MapControls/Margin/Rows
+	for control_name in ["TimeSlider", "SimulationSpeed", "AutoWeather", "RainToggle", "FogPreview"]:
+		var control := rows.get_node_or_null(control_name) as Control
+		if control != null:
+			control.mouse_filter = Control.MOUSE_FILTER_STOP
+			if control is BaseButton:
+				(control as BaseButton).disabled = client
+			elif control is Slider:
+				(control as Slider).editable = not client
+			control.modulate.a = 0.55 if client else 1.0
+
+
+func _on_host_started() -> void:
+	network_snapshot_elapsed = 0.0
+	_update_network_controls()
+
+
+func _on_connected_to_host() -> void:
+	_update_network_controls()
+
+
+func _on_network_peer_joined(peer_id: int) -> void:
+	if network_session.is_host() and peer_id != 1:
+		_receive_world.rpc_id(
+			peer_id,
+			world_seed,
+			current_time,
+			current_day,
+			simulation_speed,
+			_weather_state()
+		)
+
+
+func _on_network_peer_left(peer_id: int) -> void:
+	if network_session.is_host() and network_status != null:
+		network_status.text = "Игрок %d отключился" % peer_id
+
+
+func _return_to_offline() -> void:
+	if network_session != null and network_session.is_online():
+		network_session.stop()
+	if network_status != null:
+		network_status.text = "Автономная игра"
+	_update_network_controls()
+
+
+@rpc("authority", "call_remote", "reliable", 0)
+func _receive_world(
+	seed_value: int,
+	hour: float,
+	day: int,
+	speed: float,
+	climate_state: Dictionary
+) -> void:
+	world_seed = seed_value
+	current_time = hour
+	current_day = day
+	simulation_speed = speed
+	weather.climate.reset(world_seed, current_time)
+	generate_world()
+	_apply_weather_state(climate_state)
+	_set_time_of_day(current_time)
+	if network_status != null:
+		network_status.text = "Мир синхронизирован · Seed %d" % world_seed
+	network_world_synchronized.emit(world_seed)
+
+
+func _broadcast_network_snapshot() -> void:
+	if not network_session.is_host():
+		return
+	_receive_network_snapshot.rpc(current_time, current_day, _weather_state())
+
+
+@rpc("authority", "call_remote", "unreliable_ordered", 1)
+func _receive_network_snapshot(
+	hour: float,
+	day: int,
+	climate_state: Dictionary
+) -> void:
+	current_time = hour
+	current_day = day
+	_apply_weather_state(climate_state)
+	_set_time_of_day(current_time)
+
+
+func _weather_state() -> Dictionary:
+	var climate = weather.climate
+	return {
+		"phase": climate.phase,
+		"remaining_hours": climate.remaining_hours,
+		"wet_period": climate.wet_period,
+		"period_remaining_hours": climate.period_remaining_hours,
+		"automatic": climate.automatic,
+		"manual_rain": climate.manual_rain,
+		"rain": climate.rain,
+		"cloud": climate.cloud,
+		"fog": climate.fog,
+		"moisture": climate.moisture,
+		"wind": climate.wind,
+		"storm_strength": climate.storm_strength,
+		"fog_override": climate.fog_override,
+	}
+
+
+func _apply_weather_state(state: Dictionary) -> void:
+	var climate = weather.climate
+	climate.phase = state.get("phase", climate.phase)
+	climate.remaining_hours = state.get("remaining_hours", climate.remaining_hours)
+	climate.wet_period = state.get("wet_period", climate.wet_period)
+	climate.period_remaining_hours = state.get("period_remaining_hours", climate.period_remaining_hours)
+	climate.automatic = state.get("automatic", climate.automatic)
+	climate.manual_rain = state.get("manual_rain", climate.manual_rain)
+	climate.rain = state.get("rain", climate.rain)
+	climate.cloud = state.get("cloud", climate.cloud)
+	climate.fog = state.get("fog", climate.fog)
+	climate.moisture = state.get("moisture", climate.moisture)
+	climate.wind = state.get("wind", climate.wind)
+	climate.storm_strength = state.get("storm_strength", climate.storm_strength)
+	climate.fog_override = state.get("fog_override", climate.fog_override)
