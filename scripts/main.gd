@@ -12,7 +12,6 @@ const NETWORK_SESSION := preload("res://scripts/network_session.gd")
 const NETWORK_PLAYER_SCENE := preload("res://scenes/network_player.tscn")
 const TEMP_BUILDING_SCENE := preload("res://assets/temporary_building/house4.18.fbx")
 const TEMP_BUILDING_FOOTPRINT := 4.5
-const NETWORK_SNAPSHOT_INTERVAL := 0.1
 
 @onready var map_renderer: MapRenderer3D = $MapRenderer
 @onready var test_unit: TestUnit3D = $MapRenderer/TestUnit
@@ -36,7 +35,6 @@ var current_day := 1
 var simulation_speed := 1.0
 var weather: Node3D
 var network_session: NetworkSession
-var network_snapshot_elapsed := 0.0
 var network_address: LineEdit
 var network_host_button: Button
 var network_join_button: Button
@@ -46,6 +44,7 @@ var network_players_root: Node3D
 var local_network_player: NetworkPlayer3D
 var remote_players: Dictionary[int, NetworkPlayer3D] = {}
 var player_spawn_cells: Dictionary[int, Vector2i] = {}
+var last_server_tick := -1
 
 
 func _ready() -> void:
@@ -53,9 +52,9 @@ func _ready() -> void:
 	network_session.name = "NetworkSession"
 	add_child(network_session)
 	network_session.status_changed.connect(_on_network_status_changed)
-	network_session.host_started.connect(_on_host_started)
 	network_session.connected_to_host.connect(_on_connected_to_host)
-	network_session.peer_joined.connect(_on_network_peer_joined)
+	get_node("/root/MatchNetwork").world_received.connect(_on_match_world)
+	get_node("/root/MatchNetwork").snapshot_received.connect(_on_match_snapshot)
 	network_session.peer_left.connect(_on_network_peer_left)
 	network_session.join_failed.connect(_return_to_offline)
 	network_session.host_disconnected.connect(_return_to_offline)
@@ -90,12 +89,6 @@ func _process(delta: float) -> void:
 	weather.climate.advance(delta, game_hours, current_time)
 	_set_time_of_day(fmod(current_time + game_hours, 24.0))
 	_sync_weather_controls()
-	if network_session != null and network_session.has_connection():
-		network_snapshot_elapsed += delta
-		if network_snapshot_elapsed >= NETWORK_SNAPSHOT_INTERVAL:
-			network_snapshot_elapsed = fmod(network_snapshot_elapsed, NETWORK_SNAPSHOT_INTERVAL)
-			if network_session.is_host():
-				_broadcast_network_snapshot()
 
 
 func _on_color_grade_toggled(_enabled: bool) -> void:
@@ -302,7 +295,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			building_button.button_pressed = false
 			get_viewport().set_input_as_handled()
 			return
-		test_unit.cancel_movement(map_renderer)
+		if network_session.is_online():
+			get_node("/root/MatchNetwork").stop_unit()
+		else:
+			test_unit.cancel_movement(map_renderer)
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var ground_position := game_camera.screen_to_ground(event.position, MapRenderer3D.LAND_Y)
@@ -313,6 +309,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if is_placing_building:
 			_place_temporary_building(map_renderer.cell_to_world(target.x, target.y))
+			get_viewport().set_input_as_handled()
+			return
+		if network_session.is_online():
+			get_node("/root/MatchNetwork").move_unit(target)
 			get_viewport().set_input_as_handled()
 			return
 		var current_cell := test_unit.nearest_route_cell(map_renderer)
@@ -339,7 +339,7 @@ func _setup_network_controls() -> void:
 	rows.add_child(actions)
 	network_host_button = Button.new()
 	network_host_button.text = "Создать"
-	network_host_button.pressed.connect(func(): network_session.start_host())
+	network_host_button.pressed.connect(func(): await network_session.start_host())
 	actions.add_child(network_host_button)
 	network_join_button = Button.new()
 	network_join_button.text = "Войти"
@@ -385,132 +385,63 @@ func _update_network_controls() -> void:
 			control.modulate.a = 0.55 if client else 1.0
 
 
-func _on_host_started() -> void:
-	network_snapshot_elapsed = 0.0
-	_clear_remote_players()
-	player_spawn_cells = {1: test_unit.grid_cell}
-	_ensure_network_player(1, test_unit.global_position)
-	_update_network_controls()
-	_update_match_status()
-
-
 func _on_connected_to_host() -> void:
-	network_snapshot_elapsed = 0.0
+	test_unit.cancel_movement(map_renderer)
+	test_unit.set_process(false)
+	get_node("/root/MatchNetwork").request_world()
 	_update_network_controls()
-
-
-func _on_network_peer_joined(peer_id: int) -> void:
-	if network_session.is_host() and peer_id != 1:
-		var spawn_cell := _find_network_spawn_cell()
-		player_spawn_cells[peer_id] = spawn_cell
-		var spawn_position := map_renderer.cell_to_world(spawn_cell.x, spawn_cell.y)
-		_ensure_network_player(peer_id, spawn_position)
-		_add_network_player.rpc(peer_id, spawn_cell)
-		_receive_world.rpc_id(
-			peer_id,
-			world_seed,
-			current_time,
-			current_day,
-			simulation_speed,
-			_weather_state(),
-			_network_time(),
-			_collect_player_states()
-		)
-		_update_match_status()
 
 
 func _on_network_peer_left(peer_id: int) -> void:
 	_remove_remote_player(peer_id)
 	player_spawn_cells.erase(peer_id)
-	if network_session.is_host() and network_status != null:
-		network_status.text = "Игрок %d отключился · осталось %d" % [peer_id, _player_count()]
+	_update_match_status()
 
 
 func _return_to_offline() -> void:
-	if network_session != null and network_session.is_online():
+	if network_session != null:
 		network_session.stop()
 	_clear_remote_players()
 	player_spawn_cells.clear()
+	test_unit.grid_cell = map_renderer.world_to_cell(test_unit.global_position)
+	test_unit.set_process(true)
 	if network_status != null:
 		network_status.text = "Автономная игра"
 	_update_network_controls()
 
 
-@rpc("authority", "call_remote", "reliable", 0)
-func _receive_world(
-	seed_value: int,
-	hour: float,
-	day: int,
-	speed: float,
-	climate_state: Dictionary,
-	sample_time: float,
-	player_states: Array
-) -> void:
-	world_seed = seed_value
-	weather.climate.reset(world_seed, hour)
-	generate_world()
-	var synchronized_peer_ids: Array[int] = []
-	for state in player_states:
-		var peer_id: int = state.get("peer_id", 0)
-		var spawn_cell: Vector2i = state.get("spawn_cell", Vector2i.ZERO)
-		var world_position: Vector3 = state.get("position", Vector3.ZERO)
-		synchronized_peer_ids.append(peer_id)
-		player_spawn_cells[peer_id] = spawn_cell
-		if peer_id == multiplayer.get_unique_id():
-			test_unit.place_on_cell(spawn_cell, world_position)
-		var player := _ensure_network_player(peer_id, world_position)
-		if peer_id != multiplayer.get_unique_id():
-			player.apply_snapshot(world_position, sample_time)
-	for peer_id in remote_players.keys():
-		if peer_id not in synchronized_peer_ids:
-			_remove_remote_player(peer_id)
-	for peer_id in player_spawn_cells.keys():
-		if peer_id not in synchronized_peer_ids:
-			player_spawn_cells.erase(peer_id)
-	_apply_host_timeline(hour, day, speed, climate_state, sample_time)
-	_update_match_status()
+func _on_match_world(state: Dictionary) -> void:
+	var clock := get_node("/root/NetworkTime")
+	clock.stop()
+	if world_seed != state.seed:
+		world_seed = state.seed
+		generate_world()
+	test_unit.cancel_movement(map_renderer)
+	test_unit.set_process(false)
+	_clear_remote_players()
+	player_spawn_cells.clear()
+	last_server_tick = -1
+	_on_match_snapshot(state)
+	clock.start()
 	network_world_synchronized.emit(world_seed)
 
 
-func _broadcast_network_snapshot() -> void:
-	if not network_session.is_host():
+func _on_match_snapshot(state: Dictionary) -> void:
+	if state.tick <= last_server_tick:
 		return
-	_receive_network_snapshot.rpc(
-		current_time,
-		current_day,
-		simulation_speed,
-		_weather_state(),
-		_network_time(),
-		_collect_player_states()
-	)
-
-
-@rpc("authority", "call_remote", "unreliable_ordered", 1)
-func _receive_network_snapshot(
-	hour: float,
-	day: int,
-	speed: float,
-	climate_state: Dictionary,
-	sample_time: float,
-	player_states: Array
-) -> void:
-	_apply_host_timeline(hour, day, speed, climate_state, sample_time)
-	for state in player_states:
-		var peer_id: int = state.get("peer_id", 0)
-		if peer_id == multiplayer.get_unique_id():
-			continue
-		var world_position: Vector3 = state.get("position", Vector3.ZERO)
-		var remote := _ensure_network_player(peer_id, world_position)
-		remote.apply_snapshot(world_position, sample_time)
-
-
-@rpc("authority", "call_remote", "reliable", 0)
-func _add_network_player(peer_id: int, spawn_cell: Vector2i) -> void:
-	player_spawn_cells[peer_id] = spawn_cell
-	var spawn_position := map_renderer.cell_to_world(spawn_cell.x, spawn_cell.y)
-	if peer_id == multiplayer.get_unique_id():
-		test_unit.place_on_cell(spawn_cell, spawn_position)
-	_ensure_network_player(peer_id, spawn_position)
+	last_server_tick = state.tick
+	_apply_host_timeline(state.hour, state.day, state.speed, state.weather, state.time)
+	var ids: Array[int] = []
+	for p in state.players:
+		var id: int = p.peer_id
+		ids.append(id)
+		player_spawn_cells[id] = p.spawn_cell
+		var player := _ensure_network_player(id, p.position)
+		player.apply_snapshot(p.position, state.time)
+	for id in remote_players.keys():
+		if id not in ids:
+			_remove_remote_player(id)
+			player_spawn_cells.erase(id)
 	_update_match_status()
 
 
@@ -531,25 +462,6 @@ func _apply_host_timeline(
 	current_day = day + floori((hour + game_hours) / 24.0)
 	weather.climate.advance(elapsed_seconds, game_hours, hour)
 	_set_time_of_day(fmod(hour + game_hours, 24.0))
-
-
-func _collect_player_states() -> Array[Dictionary]:
-	var result: Array[Dictionary] = []
-	var peer_ids := player_spawn_cells.keys()
-	peer_ids.sort()
-	for key in peer_ids:
-		var peer_id: int = key
-		var world_position := test_unit.global_position
-		if peer_id != 1:
-			var remote := remote_players.get(peer_id) as NetworkPlayer3D
-			if remote != null:
-				world_position = remote.network_position
-		result.append({
-			"peer_id": peer_id,
-			"spawn_cell": player_spawn_cells[peer_id],
-			"position": world_position,
-		})
-	return result
 
 
 func _ensure_network_player(peer_id: int, spawn_position: Vector3) -> NetworkPlayer3D:
@@ -585,32 +497,6 @@ func _clear_remote_players() -> void:
 		if is_instance_valid(remote):
 			remote.free()
 	remote_players.clear()
-
-
-func _find_network_spawn_cell() -> Vector2i:
-	var origin: Vector2i = player_spawn_cells.get(1, test_unit.grid_cell)
-	for radius in range(4, 42):
-		var candidates := [
-			origin + Vector2i(radius, 0),
-			origin + Vector2i(-radius, 0),
-			origin + Vector2i(0, radius),
-			origin + Vector2i(0, -radius),
-			origin + Vector2i(radius, radius),
-			origin + Vector2i(-radius, radius),
-			origin + Vector2i(radius, -radius),
-			origin + Vector2i(-radius, -radius),
-		]
-		for candidate in candidates:
-			if not map_renderer.is_land(candidate):
-				continue
-			var occupied := false
-			for existing in player_spawn_cells.values():
-				if Vector2(candidate).distance_squared_to(Vector2(existing)) < 9.0:
-					occupied = true
-					break
-			if not occupied and not pathfinder.find_path(origin, candidate).is_empty():
-				return candidate
-	return origin
 
 
 func _player_count() -> int:

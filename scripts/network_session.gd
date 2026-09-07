@@ -2,7 +2,6 @@ class_name NetworkSession
 extends Node
 
 signal status_changed(message: String)
-signal host_started
 signal connected_to_host
 signal peer_joined(peer_id: int)
 signal peer_left(peer_id: int)
@@ -12,9 +11,11 @@ signal host_disconnected
 const DEFAULT_PORT := 7000
 const MAX_PLAYERS := 4
 
-enum Mode { OFFLINE, HOST, CLIENT }
+enum Mode { OFFLINE, CLIENT }
 
 var mode := Mode.OFFLINE
+var server_pid := -1
+var launching := false
 
 
 func _ready() -> void:
@@ -27,16 +28,45 @@ func _ready() -> void:
 
 func start_host(port: int = DEFAULT_PORT) -> Error:
 	stop()
-	var peer := ENetMultiplayerPeer.new()
-	var result := peer.create_server(port, MAX_PLAYERS)
+	var probe := ENetMultiplayerPeer.new()
+	var result := probe.create_server(port, MAX_PLAYERS)
 	if result != OK:
 		status_changed.emit("Не удалось открыть UDP-порт %d: %s" % [port, error_string(result)])
 		return result
-	multiplayer.multiplayer_peer = peer
-	mode = Mode.HOST
-	status_changed.emit("Матч создан · UDP %d" % port)
-	host_started.emit()
-	return OK
+	probe.close()
+	launching = true
+	mode = Mode.CLIENT
+	status_changed.emit("Запуск отдельного сервера…")
+	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
+		"--script", "res://scripts/server_entry.gd", "--", "--port=%d" % port,
+		"--seed=%d" % get_parent().world_seed])
+	server_pid = OS.create_process(OS.get_executable_path(), args, false)
+	if server_pid <= 0:
+		stop()
+		status_changed.emit("Не удалось запустить процесс сервера")
+		join_failed.emit()
+		return ERR_CANT_CREATE
+	var launched_pid := server_pid
+	var deadline := Time.get_ticks_msec() + 45000
+	var marker := "user://dedicated-%d.ready" % launched_pid
+	while launching and server_pid == launched_pid and OS.is_process_running(launched_pid) and Time.get_ticks_msec() < deadline:
+		if FileAccess.file_exists(marker):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(marker))
+			launching = false
+			var peer := ENetMultiplayerPeer.new()
+			result = peer.create_client("127.0.0.1", port)
+			if result == OK:
+				multiplayer.multiplayer_peer = peer
+				status_changed.emit("Сервер запущен · подключение…")
+				return OK
+			break
+		await get_tree().create_timer(0.1).timeout
+	if server_pid != launched_pid:
+		return ERR_SKIP
+	stop()
+	status_changed.emit("Не удалось запустить сервер")
+	join_failed.emit()
+	return ERR_CANT_CREATE
 
 
 func join_host(address: String, port: int = DEFAULT_PORT) -> Error:
@@ -56,6 +86,11 @@ func join_host(address: String, port: int = DEFAULT_PORT) -> Error:
 
 
 func stop() -> void:
+	if launching and server_pid > 0 and OS.is_process_running(server_pid):
+		OS.kill(server_pid)
+	launching = false
+	server_pid = -1
+	get_node("/root/MatchNetwork").loaded = false
 	if multiplayer.multiplayer_peer != null:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
@@ -76,7 +111,8 @@ func has_connection() -> bool:
 
 
 func is_host() -> bool:
-	return mode == Mode.HOST
+	# Every graphical instance is a client; authority lives in server_entry.gd.
+	return false
 
 
 func _on_peer_connected(peer_id: int) -> void:
@@ -88,6 +124,9 @@ func _on_peer_disconnected(peer_id: int) -> void:
 
 
 func _on_connected_to_server() -> void:
+	var peer := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	if peer != null:
+		peer.get_peer(1).set_timeout(32, 60000, 120000)
 	status_changed.emit("Подключено · ID %d" % multiplayer.get_unique_id())
 	connected_to_host.emit()
 

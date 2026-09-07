@@ -1,84 +1,56 @@
 extends SceneTree
-
 const MAIN_SCENE := preload("res://scenes/main.tscn")
-
-var world: Node3D
-var role := ""
-var connected_peer_id := 0
-var host_saw_remote := false
-
+var world: Node
+var role := "host"
+var initial_positions := {}
+var moved := {}
+var exercised := false
 
 func _initialize() -> void:
-	for argument in OS.get_cmdline_user_args():
-		if argument.begins_with("--role="):
-			role = argument.trim_prefix("--role=")
-	if role not in ["host", "client"]:
-		push_error("Use --role=host or --role=client")
-		quit(2)
-		return
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--role="):
+			role = arg.trim_prefix("--role=")
 	call_deferred("_start")
-
 
 func _start() -> void:
 	world = MAIN_SCENE.instantiate()
 	root.add_child(world)
 	await process_frame
+	root.get_node("MatchNetwork").snapshot_received.connect(_observe)
 	if role == "host":
-		world.network_session.peer_joined.connect(_on_peer_joined)
-		world.network_session.peer_left.connect(_on_peer_left)
-		var result: Error = world.network_session.start_host()
-		if result != OK:
-			push_error("Host failed: %s" % error_string(result))
-			quit(3)
-			return
-		print("NETWORK_SMOKE HOST_READY seed=", world.world_seed)
+		assert(await world.network_session.start_host(17003) == OK)
 	else:
-		world.network_world_synchronized.connect(_on_world_synchronized)
-		var result: Error = world.network_session.join_host("127.0.0.1")
-		if result != OK:
-			push_error("Client start failed: %s" % error_string(result))
-			quit(5)
-			return
-	await create_timer(150.0).timeout
-	push_error("%s timed out" % role.capitalize())
-	quit(4 if role == "host" else 6)
+		assert(world.network_session.join_host("127.0.0.1", 17003) == OK)
+	await create_timer(100).timeout
+	push_error("GAME_NETWORK_TIMEOUT " + role)
+	quit(1)
 
-
-func _on_peer_joined(peer_id: int) -> void:
-	connected_peer_id = peer_id
-	await create_timer(0.5).timeout
-	if not world.remote_players.has(peer_id):
-		push_error("Host did not create the connected player's unit")
-		quit(7)
+func _observe(state: Dictionary) -> void:
+	if state.players.size() != 2 or state.get("ready_count", 0) != 2:
 		return
-	host_saw_remote = true
+	if not exercised:
+		exercised = true
+		for p in state.players:
+			initial_positions[p.peer_id] = p.position
+		call_deferred("_move")
+	for p in state.players:
+		if p.position.distance_to(initial_positions[p.peer_id]) > 0.5:
+			moved[p.peer_id] = true
 
-
-func _on_peer_left(peer_id: int) -> void:
-	if peer_id != connected_peer_id:
-		return
-	if not host_saw_remote:
-		push_error("Host never saw the connected player's unit")
-		quit(9)
-		return
-	print("NETWORK_SMOKE HOST_PASS peer=", peer_id, " seed=", world.world_seed)
-	quit()
-
-
-func _on_world_synchronized(seed_value: int) -> void:
-	if seed_value != world.world_seed:
-		push_error("Client applied the wrong world seed")
-		quit(8)
-		return
-	if not world.remote_players.has(1) or world.player_spawn_cells.size() != 2:
-		push_error("Client did not create the host player unit")
-		quit(11)
-		return
-	print(
-		"NETWORK_SMOKE CLIENT_PASS id=",
-		world.multiplayer.get_unique_id(),
-		" seed=",
-		seed_value
-	)
-	await create_timer(1.0).timeout
+func _move() -> void:
+	var own_id := root.multiplayer.get_unique_id()
+	var spawn: Vector2i = world.player_spawn_cells[own_id]
+	for offset in [Vector2i(5, 0), Vector2i(-5, 0), Vector2i(0, 5), Vector2i(0, -5)]:
+		if not world.pathfinder.find_path(spawn, spawn + offset).is_empty():
+			root.get_node("MatchNetwork").move_unit(spawn + offset)
+			break
+	await create_timer(7).timeout
+	assert(moved.size() == 2, "Game windows must see both players move")
+	assert(world.test_unit.global_position.distance_to(initial_positions[own_id]) > 0.5, "Own visible unit must move")
+	assert(world.remote_players.size() == 1)
+	for remote in world.remote_players.values():
+		assert(remote.visible and remote.global_position.distance_to(initial_positions[remote.peer_id]) > 0.5)
+	print("GAME_NETWORK_PASS ", role, " own_and_remote_visible_movement")
+	await create_timer(3).timeout
+	world.network_session.stop()
 	quit()
