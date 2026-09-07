@@ -17,15 +17,20 @@ func _ready() -> void:
 	look_at(Vector3.ZERO, Vector3.UP)
 
 
-func _process(delta: float) -> void:
-	var input := Vector2.ZERO
-	if Input.is_key_pressed(KEY_A): input.x -= 1.0
-	if Input.is_key_pressed(KEY_D): input.x += 1.0
-	if Input.is_key_pressed(KEY_W): input.y += 1.0
-	if Input.is_key_pressed(KEY_S): input.y -= 1.0
-	if input != Vector2.ZERO:
-		_move_on_ground(input.normalized() * 12.0 * delta)
+func _process(_delta: float) -> void:
+	if dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
+		dragging = false
 	_clamp_position()
+
+
+func focus_on(point: Vector3) -> void:
+	global_position = Vector3(point.x, 0.0, point.z) + global_basis.z * (CAMERA_HEIGHT / global_basis.z.y)
+	_clamp_position()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		dragging = false
 
 
 func _unhandled_input(event: InputEvent) -> void:

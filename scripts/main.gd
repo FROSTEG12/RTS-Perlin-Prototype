@@ -30,6 +30,8 @@ var current_time := 8.0
 var current_day := 1
 var simulation_speed := 1.0
 var weather: Node3D
+var rts: Control
+var player_units: Array[TestUnit3D] = []
 
 
 func _ready() -> void:
@@ -42,6 +44,7 @@ func _ready() -> void:
 	add_child(weather)
 	weather.setup(game_camera, test_unit, world_seed)
 	_setup_weather_controls()
+	_setup_rts_controls()
 	time_slider.value_changed.connect(_on_time_slider_changed)
 	_set_time_of_day(current_time)
 	new_map_button.pressed.connect(_on_new_map_pressed)
@@ -97,6 +100,8 @@ func _apply_day_night_lighting() -> void:
 
 
 func _on_building_button_toggled(enabled: bool) -> void:
+	if rts != null:
+		rts.cancel_drag()
 	is_placing_building = enabled
 	building_button.text = "Кликните по суше…" if enabled else "Поставить дом"
 
@@ -161,6 +166,8 @@ func _get_model_bounds(root: Node3D) -> AABB:
 
 
 func generate_world() -> void:
+	if rts != null:
+		rts.reset()
 	for building in temporary_buildings.get_children():
 		building.queue_free()
 	var generator := MapGenerator.new()
@@ -179,11 +186,39 @@ func generate_world() -> void:
 	))
 	game_camera.configure_map(map_renderer.get_half_extent())
 	var spawn_cell := generator.find_mainland_spawn(current_cells, DEFAULT_MAP_SIZE)
-	test_unit.set_trail_wear(map_renderer.trail_wear)
-	test_unit.place_on_cell(spawn_cell, map_renderer.cell_to_world(spawn_cell.x, spawn_cell.y))
+	var used: Array[Vector2i] = []
+	for unit in player_units:
+		var chosen := spawn_cell
+		var found := false
+		for radius in range(DEFAULT_MAP_SIZE):
+			if found:
+				break
+			for y in range(-radius, radius + 1):
+				if found:
+					break
+				for x in range(-radius, radius + 1):
+					if maxi(absi(x), absi(y)) != radius:
+						continue
+					var candidate := spawn_cell + Vector2i(x, y)
+					if not map_renderer.is_land(candidate):
+						continue
+					var occupied := false
+					for taken in used:
+						if Vector2(candidate).distance_to(Vector2(taken)) < 2.0:
+							occupied = true
+					if not occupied and not pathfinder.find_path(spawn_cell, candidate).is_empty():
+						chosen = candidate
+						found = true
+						break
+		used.append(chosen)
+		unit.set_trail_wear(map_renderer.trail_wear)
+		unit.place_on_cell(chosen, map_renderer.cell_to_world(chosen.x, chosen.y))
 	seed_label.text = "Seed: %d  •  Вода: %d%%" % [world_seed, int(map_data["water_percent"])]
 	if weather != null:
 		weather.refresh_world(map_renderer.get_half_extent())
+	if rts != null:
+		rts.grid_overlay.refresh()
+	game_camera.focus_on(test_unit.global_position)
 
 
 func _setup_weather_controls() -> void:
@@ -221,8 +256,10 @@ func _setup_weather_controls() -> void:
 	var focus := Button.new()
 	focus.text = "К юниту"
 	focus.pressed.connect(func():
-		game_camera.global_position = test_unit.global_position + game_camera.global_basis.z * (18.0 / game_camera.global_basis.z.y)
-		game_camera._clamp_position())
+		if rts != null and not rts.selected.is_empty():
+			rts.focus_selected()
+		else:
+			game_camera.focus_on(test_unit.global_position))
 	rows.add_child(focus)
 	var status := Label.new()
 	status.name = "WeatherStatus"
@@ -256,13 +293,16 @@ func _on_new_map_pressed() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if not is_placing_building or is_generating:
+		return
+	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		building_button.button_pressed = false
+		get_viewport().set_input_as_handled()
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 		if is_placing_building:
 			building_button.button_pressed = false
 			get_viewport().set_input_as_handled()
 			return
-		test_unit.cancel_movement(map_renderer)
-		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var ground_position := game_camera.screen_to_ground(event.position, MapRenderer3D.LAND_Y)
 		if not ground_position.is_finite():
@@ -274,8 +314,27 @@ func _unhandled_input(event: InputEvent) -> void:
 			_place_temporary_building(map_renderer.cell_to_world(target.x, target.y))
 			get_viewport().set_input_as_handled()
 			return
-		var current_cell := test_unit.nearest_route_cell(map_renderer)
-		var path := pathfinder.find_path(current_cell, target)
-		if not path.is_empty():
-			test_unit.follow_path(path, map_renderer)
-			get_viewport().set_input_as_handled()
+
+
+func _setup_rts_controls() -> void:
+	player_units.append(test_unit)
+	var scene := preload("res://scenes/worker_unit.tscn")
+	var models := [preload("res://assets/units/kaykit/Ranger.scn"),
+		preload("res://assets/units/kaykit/Barbarian.scn"),
+		preload("res://assets/units/kaykit/Rogue.scn"),
+		preload("res://assets/units/kaykit/Rogue_Hooded.scn")]
+	var names := ["Лучник", "Варвар", "Разбойник", "Разбойник в капюшоне"]
+	for index in range(4):
+		var unit := scene.instantiate() as TestUnit3D
+		unit.name = "Worker_%d" % (index + 2)
+		unit.display_name = names[index]
+		map_renderer.add_child(unit)
+		unit.visual.set_model(models[index])
+		player_units.append(unit)
+	rts = preload("res://scripts/rts_controller.gd").new()
+	rts.name = "RTSControls"
+	rts.world = self
+	$UI.add_child(rts)
+	# Prevent a focused button consuming Space, the selection-focus shortcut.
+	for button in $UI/MapControls.find_children("*", "BaseButton", true, false):
+		button.focus_mode = Control.FOCUS_NONE

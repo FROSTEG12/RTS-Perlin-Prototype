@@ -5,7 +5,7 @@
 [ext_resource path="res://scripts/game_camera.gd" type="Script" id="3_camera"]
 [ext_resource path="res://scripts/test_unit.gd" type="Script" id="4_unit"]
 [ext_resource path="res://Compositor/Color grading/ColorGrading.gd" type="Script" id="5_grade"]
-[ext_resource path="res://assets/units/worker/worker.scn" type="PackedScene" id="6_worker"]
+[ext_resource path="res://assets/units/kaykit/Knight.scn" type="PackedScene" id="6_worker"]
 [ext_resource path="res://scripts/worker_visual.gd" type="Script" id="7_worker_visual"]
 
 [sub_resource type="CompositorEffect" id="ColorGrading_game"]
@@ -89,7 +89,7 @@ position = Vector3(0, -0.097, 0)
 script = ExtResource("7_worker_visual")
 
 [node name="Model" parent="MapRenderer/TestUnit/Visual" instance=ExtResource("6_worker")]
-scale = Vector3(0.65, 0.65, 0.65)
+scale = Vector3(0.55, 0.55, 0.55)
 
 [node name="SelectionRing" type="MeshInstance3D" parent="MapRenderer/TestUnit"]
 position = Vector3(0, -0.087, 0)
