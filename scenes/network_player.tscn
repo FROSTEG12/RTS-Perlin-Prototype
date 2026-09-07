@@ -1,0 +1,41 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/network_player.gd" id="1_player"]
+[ext_resource type="Script" path="res://scripts/worker_visual.gd" id="2_visual"]
+[ext_resource type="PackedScene" path="res://assets/units/worker/worker.scn" id="3_worker"]
+
+[sub_resource type="StandardMaterial3D" id="Material_remote"]
+shading_mode = 0
+albedo_color = Color(0.16, 0.78, 1, 1)
+
+[sub_resource type="TorusMesh" id="Ring_remote"]
+inner_radius = 0.21
+outer_radius = 0.235
+rings = 32
+ring_segments = 6
+material = SubResource("Material_remote")
+
+[node name="NetworkPlayer" type="Node3D"]
+script = ExtResource("1_player")
+
+[node name="Visual" type="Node3D" parent="."]
+position = Vector3(0, -0.097, 0)
+script = ExtResource("2_visual")
+
+[node name="Model" parent="Visual" instance=ExtResource("3_worker")]
+scale = Vector3(0.65, 0.65, 0.65)
+
+[node name="PresenceRing" type="MeshInstance3D" parent="."]
+position = Vector3(0, -0.087, 0)
+mesh = SubResource("Ring_remote")
+cast_shadow = 0
+
+[node name="PlayerLabel" type="Label3D" parent="."]
+position = Vector3(0, 1.32, 0)
+modulate = Color(0.72, 0.92, 1, 1)
+outline_modulate = Color(0.015, 0.025, 0.035, 0.95)
+text = "Игрок"
+font_size = 28
+outline_size = 8
+billboard = 1
+no_depth_test = true

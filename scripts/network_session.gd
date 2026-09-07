@@ -66,6 +66,15 @@ func is_online() -> bool:
 	return mode != Mode.OFFLINE
 
 
+func has_connection() -> bool:
+	return (
+		is_online()
+		and multiplayer.multiplayer_peer != null
+		and multiplayer.multiplayer_peer.get_connection_status()
+		== MultiplayerPeer.CONNECTION_CONNECTED
+	)
+
+
 func is_host() -> bool:
 	return mode == Mode.HOST
 

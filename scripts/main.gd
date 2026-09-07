@@ -9,6 +9,7 @@ const DEFAULT_RESOURCE_DENSITY := 130
 const MINUTES_PER_DAY := 12.0
 const DAY_NIGHT_LIGHTING := preload("res://scripts/day_night_lighting.gd")
 const NETWORK_SESSION := preload("res://scripts/network_session.gd")
+const NETWORK_PLAYER_SCENE := preload("res://scenes/network_player.tscn")
 const TEMP_BUILDING_SCENE := preload("res://assets/temporary_building/house4.18.fbx")
 const TEMP_BUILDING_FOOTPRINT := 4.5
 const NETWORK_SNAPSHOT_INTERVAL := 0.1
@@ -41,6 +42,10 @@ var network_host_button: Button
 var network_join_button: Button
 var network_leave_button: Button
 var network_status: Label
+var network_players_root: Node3D
+var local_network_player: NetworkPlayer3D
+var remote_players: Dictionary[int, NetworkPlayer3D] = {}
+var player_spawn_cells: Dictionary[int, Vector2i] = {}
 
 
 func _ready() -> void:
@@ -62,6 +67,9 @@ func _ready() -> void:
 	weather.name = "Weather"
 	add_child(weather)
 	weather.setup(game_camera, test_unit, world_seed)
+	network_players_root = Node3D.new()
+	network_players_root.name = "NetworkPlayers"
+	map_renderer.add_child(network_players_root)
 	_setup_weather_controls()
 	_setup_network_controls()
 	time_slider.value_changed.connect(_on_time_slider_changed)
@@ -74,9 +82,6 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if network_session != null and network_session.is_online() and not network_session.is_host():
-		_sync_weather_controls()
-		return
 	var hours_per_second := 24.0 / (MINUTES_PER_DAY * 60.0)
 	var game_hours := delta * hours_per_second * simulation_speed
 	# Shared elapsed clock for date, weather and lighting. The lighting slider
@@ -85,11 +90,12 @@ func _process(delta: float) -> void:
 	weather.climate.advance(delta, game_hours, current_time)
 	_set_time_of_day(fmod(current_time + game_hours, 24.0))
 	_sync_weather_controls()
-	if network_session != null and network_session.is_host():
+	if network_session != null and network_session.has_connection():
 		network_snapshot_elapsed += delta
 		if network_snapshot_elapsed >= NETWORK_SNAPSHOT_INTERVAL:
 			network_snapshot_elapsed = fmod(network_snapshot_elapsed, NETWORK_SNAPSHOT_INTERVAL)
-			_broadcast_network_snapshot()
+			if network_session.is_host():
+				_broadcast_network_snapshot()
 
 
 func _on_color_grade_toggled(_enabled: bool) -> void:
@@ -381,33 +387,50 @@ func _update_network_controls() -> void:
 
 func _on_host_started() -> void:
 	network_snapshot_elapsed = 0.0
+	_clear_remote_players()
+	player_spawn_cells = {1: test_unit.grid_cell}
+	_ensure_network_player(1, test_unit.global_position)
 	_update_network_controls()
+	_update_match_status()
 
 
 func _on_connected_to_host() -> void:
+	network_snapshot_elapsed = 0.0
 	_update_network_controls()
 
 
 func _on_network_peer_joined(peer_id: int) -> void:
 	if network_session.is_host() and peer_id != 1:
+		var spawn_cell := _find_network_spawn_cell()
+		player_spawn_cells[peer_id] = spawn_cell
+		var spawn_position := map_renderer.cell_to_world(spawn_cell.x, spawn_cell.y)
+		_ensure_network_player(peer_id, spawn_position)
+		_add_network_player.rpc(peer_id, spawn_cell)
 		_receive_world.rpc_id(
 			peer_id,
 			world_seed,
 			current_time,
 			current_day,
 			simulation_speed,
-			_weather_state()
+			_weather_state(),
+			_network_time(),
+			_collect_player_states()
 		)
+		_update_match_status()
 
 
 func _on_network_peer_left(peer_id: int) -> void:
+	_remove_remote_player(peer_id)
+	player_spawn_cells.erase(peer_id)
 	if network_session.is_host() and network_status != null:
-		network_status.text = "Игрок %d отключился" % peer_id
+		network_status.text = "Игрок %d отключился · осталось %d" % [peer_id, _player_count()]
 
 
 func _return_to_offline() -> void:
 	if network_session != null and network_session.is_online():
 		network_session.stop()
+	_clear_remote_players()
+	player_spawn_cells.clear()
 	if network_status != null:
 		network_status.text = "Автономная игра"
 	_update_network_controls()
@@ -419,37 +442,194 @@ func _receive_world(
 	hour: float,
 	day: int,
 	speed: float,
-	climate_state: Dictionary
+	climate_state: Dictionary,
+	sample_time: float,
+	player_states: Array
 ) -> void:
 	world_seed = seed_value
-	current_time = hour
-	current_day = day
-	simulation_speed = speed
-	weather.climate.reset(world_seed, current_time)
+	weather.climate.reset(world_seed, hour)
 	generate_world()
-	_apply_weather_state(climate_state)
-	_set_time_of_day(current_time)
-	if network_status != null:
-		network_status.text = "Мир синхронизирован · Seed %d" % world_seed
+	var synchronized_peer_ids: Array[int] = []
+	for state in player_states:
+		var peer_id: int = state.get("peer_id", 0)
+		var spawn_cell: Vector2i = state.get("spawn_cell", Vector2i.ZERO)
+		var world_position: Vector3 = state.get("position", Vector3.ZERO)
+		synchronized_peer_ids.append(peer_id)
+		player_spawn_cells[peer_id] = spawn_cell
+		if peer_id == multiplayer.get_unique_id():
+			test_unit.place_on_cell(spawn_cell, world_position)
+		var player := _ensure_network_player(peer_id, world_position)
+		if peer_id != multiplayer.get_unique_id():
+			player.apply_snapshot(world_position, sample_time)
+	for peer_id in remote_players.keys():
+		if peer_id not in synchronized_peer_ids:
+			_remove_remote_player(peer_id)
+	for peer_id in player_spawn_cells.keys():
+		if peer_id not in synchronized_peer_ids:
+			player_spawn_cells.erase(peer_id)
+	_apply_host_timeline(hour, day, speed, climate_state, sample_time)
+	_update_match_status()
 	network_world_synchronized.emit(world_seed)
 
 
 func _broadcast_network_snapshot() -> void:
 	if not network_session.is_host():
 		return
-	_receive_network_snapshot.rpc(current_time, current_day, _weather_state())
+	_receive_network_snapshot.rpc(
+		current_time,
+		current_day,
+		simulation_speed,
+		_weather_state(),
+		_network_time(),
+		_collect_player_states()
+	)
 
 
 @rpc("authority", "call_remote", "unreliable_ordered", 1)
 func _receive_network_snapshot(
 	hour: float,
 	day: int,
-	climate_state: Dictionary
+	speed: float,
+	climate_state: Dictionary,
+	sample_time: float,
+	player_states: Array
 ) -> void:
-	current_time = hour
-	current_day = day
+	_apply_host_timeline(hour, day, speed, climate_state, sample_time)
+	for state in player_states:
+		var peer_id: int = state.get("peer_id", 0)
+		if peer_id == multiplayer.get_unique_id():
+			continue
+		var world_position: Vector3 = state.get("position", Vector3.ZERO)
+		var remote := _ensure_network_player(peer_id, world_position)
+		remote.apply_snapshot(world_position, sample_time)
+
+
+@rpc("authority", "call_remote", "reliable", 0)
+func _add_network_player(peer_id: int, spawn_cell: Vector2i) -> void:
+	player_spawn_cells[peer_id] = spawn_cell
+	var spawn_position := map_renderer.cell_to_world(spawn_cell.x, spawn_cell.y)
+	if peer_id == multiplayer.get_unique_id():
+		test_unit.place_on_cell(spawn_cell, spawn_position)
+	_ensure_network_player(peer_id, spawn_position)
+	_update_match_status()
+
+
+func _apply_host_timeline(
+	hour: float,
+	day: int,
+	speed: float,
+	climate_state: Dictionary,
+	sample_time: float
+) -> void:
+	simulation_speed = speed
 	_apply_weather_state(climate_state)
-	_set_time_of_day(current_time)
+	var elapsed_seconds := 0.0
+	var clock := get_node_or_null("/root/NetworkTime")
+	if clock != null and clock.is_initial_sync_done():
+		elapsed_seconds = maxf(clock.time - sample_time, 0.0)
+	var game_hours := elapsed_seconds * 24.0 / (MINUTES_PER_DAY * 60.0) * speed
+	current_day = day + floori((hour + game_hours) / 24.0)
+	weather.climate.advance(elapsed_seconds, game_hours, hour)
+	_set_time_of_day(fmod(hour + game_hours, 24.0))
+
+
+func _collect_player_states() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var peer_ids := player_spawn_cells.keys()
+	peer_ids.sort()
+	for key in peer_ids:
+		var peer_id: int = key
+		var world_position := test_unit.global_position
+		if peer_id != 1:
+			var remote := remote_players.get(peer_id) as NetworkPlayer3D
+			if remote != null:
+				world_position = remote.network_position
+		result.append({
+			"peer_id": peer_id,
+			"spawn_cell": player_spawn_cells[peer_id],
+			"position": world_position,
+		})
+	return result
+
+
+func _ensure_network_player(peer_id: int, spawn_position: Vector3) -> NetworkPlayer3D:
+	if peer_id == multiplayer.get_unique_id() and local_network_player != null:
+		return local_network_player
+	var existing := remote_players.get(peer_id) as NetworkPlayer3D
+	if existing != null:
+		return existing
+	var remote := NETWORK_PLAYER_SCENE.instantiate() as NetworkPlayer3D
+	remote.name = "Player_%d" % peer_id
+	network_players_root.add_child(remote)
+	if peer_id == multiplayer.get_unique_id():
+		remote.setup(peer_id, spawn_position, test_unit)
+		local_network_player = remote
+	else:
+		remote.setup(peer_id, spawn_position)
+		remote_players[peer_id] = remote
+	return remote
+
+
+func _remove_remote_player(peer_id: int) -> void:
+	var remote := remote_players.get(peer_id) as NetworkPlayer3D
+	if remote != null:
+		remote.queue_free()
+	remote_players.erase(peer_id)
+
+
+func _clear_remote_players() -> void:
+	if local_network_player != null:
+		local_network_player.free()
+		local_network_player = null
+	for remote in remote_players.values():
+		if is_instance_valid(remote):
+			remote.free()
+	remote_players.clear()
+
+
+func _find_network_spawn_cell() -> Vector2i:
+	var origin: Vector2i = player_spawn_cells.get(1, test_unit.grid_cell)
+	for radius in range(4, 42):
+		var candidates := [
+			origin + Vector2i(radius, 0),
+			origin + Vector2i(-radius, 0),
+			origin + Vector2i(0, radius),
+			origin + Vector2i(0, -radius),
+			origin + Vector2i(radius, radius),
+			origin + Vector2i(-radius, radius),
+			origin + Vector2i(radius, -radius),
+			origin + Vector2i(-radius, -radius),
+		]
+		for candidate in candidates:
+			if not map_renderer.is_land(candidate):
+				continue
+			var occupied := false
+			for existing in player_spawn_cells.values():
+				if Vector2(candidate).distance_squared_to(Vector2(existing)) < 9.0:
+					occupied = true
+					break
+			if not occupied and not pathfinder.find_path(origin, candidate).is_empty():
+				return candidate
+	return origin
+
+
+func _player_count() -> int:
+	return player_spawn_cells.size()
+
+
+func _network_time() -> float:
+	var clock := get_node_or_null("/root/NetworkTime")
+	return clock.time if clock != null else Time.get_ticks_msec() / 1000.0
+
+
+func _update_match_status() -> void:
+	if network_status == null or not network_session.is_online():
+		return
+	network_status.text = "%s · игроков %d · ID %d" % [
+		"Хост" if network_session.is_host() else "Клиент",
+		_player_count(),
+		multiplayer.get_unique_id(),
+	]
 
 
 func _weather_state() -> Dictionary:

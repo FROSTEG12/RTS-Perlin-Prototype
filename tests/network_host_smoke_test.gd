@@ -5,6 +5,7 @@ const MAIN_SCENE := preload("res://scenes/main.tscn")
 var world: Node3D
 var role := ""
 var connected_peer_id := 0
+var host_saw_remote := false
 
 
 func _initialize() -> void:
@@ -38,17 +39,27 @@ func _start() -> void:
 			push_error("Client start failed: %s" % error_string(result))
 			quit(5)
 			return
-	await create_timer(60.0).timeout
+	await create_timer(150.0).timeout
 	push_error("%s timed out" % role.capitalize())
 	quit(4 if role == "host" else 6)
 
 
 func _on_peer_joined(peer_id: int) -> void:
 	connected_peer_id = peer_id
+	await create_timer(0.5).timeout
+	if not world.remote_players.has(peer_id):
+		push_error("Host did not create the connected player's unit")
+		quit(7)
+		return
+	host_saw_remote = true
 
 
 func _on_peer_left(peer_id: int) -> void:
 	if peer_id != connected_peer_id:
+		return
+	if not host_saw_remote:
+		push_error("Host never saw the connected player's unit")
+		quit(9)
 		return
 	print("NETWORK_SMOKE HOST_PASS peer=", peer_id, " seed=", world.world_seed)
 	quit()
@@ -58,6 +69,10 @@ func _on_world_synchronized(seed_value: int) -> void:
 	if seed_value != world.world_seed:
 		push_error("Client applied the wrong world seed")
 		quit(8)
+		return
+	if not world.remote_players.has(1) or world.player_spawn_cells.size() != 2:
+		push_error("Client did not create the host player unit")
+		quit(11)
 		return
 	print(
 		"NETWORK_SMOKE CLIENT_PASS id=",
