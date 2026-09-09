@@ -136,10 +136,12 @@ func run() -> void:
 	var uploads: int = blood.upload_count
 	blood.flush()
 	assert(blood.image.get_data() == stable and blood.upload_count == uploads)
-	for index in 110: assert(blood.spawn_hit(center, Vector3.RIGHT))
+	for index in 110:
+		assert(blood.spawn_hit(center, Vector3.RIGHT))
+		blood._drain() # Capacity test, not the separate overload/coalescing test.
 	blood.flush()
 	assert(blood.active_count() == 96 and blood.get_child_count() == 0)
-	assert(blood.dry_pixels.size() <= 65536)
+	assert(blood.dry_pixels.size() == blood.RESOLUTION * blood.RESOLUTION)
 	await snap("noise-saturated")
 	training.reset_arena()
 	assert(blood.active_count() == 0 and not training.death_blood_pending)

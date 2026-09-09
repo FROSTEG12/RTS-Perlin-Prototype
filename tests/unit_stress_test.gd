@@ -92,6 +92,8 @@ func measure(label: String, seconds: float = 8.0) -> void:
 	var last := start
 	var start_hits := hits
 	var upload_start: int = world.training.blood.upload_count
+	var pose_start := 0
+	for unit in units: pose_start += unit.visual.pose_updates
 	var rid := root.get_viewport_rid()
 	reset_counters()
 	while Time.get_ticks_usec() - start < int(seconds * 1000000):
@@ -128,6 +130,12 @@ func measure(label: String, seconds: float = 8.0) -> void:
 	result.render_memory_mib = Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0
 	result.nodes = Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
 	result.visible_centers = visible_count()
+	var poses := 0
+	for unit in units: poses += unit.visual.pose_updates
+	result.pose_hz_per_unit = float(poses-pose_start) / units.size() / result.seconds
+	result.blood_pending = world.training.blood.pending.size()
+	result.blood_coalesced = world.training.blood.coalesced
+	result.blood_rejected = world.training.blood.rejected
 	results.append(result)
 	var file := FileAccess.open(OUT + "-results.json", FileAccess.WRITE)
 	file.store_string(JSON.stringify({"metadata": metadata(), "results": results}, "\t"))
@@ -278,6 +286,7 @@ func run() -> void:
 		unit.visual.player.seek(unit.visual.animation_phase * 3.6)
 	await measure("diag_attack_no_blood")
 	for i in 96: world.training.blood.spawn_hit(units[i].global_position, Vector3.RIGHT)
+	world.training.blood._drain()
 	for record in world.training.blood.records: record.born = world.training.blood.clock - 60
 	world.training.blood.flush()
 	await measure("diag_attack_static_blood")

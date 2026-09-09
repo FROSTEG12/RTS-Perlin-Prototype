@@ -31,6 +31,8 @@ var last_message := "Готов к тренировке"
 var active := false
 var blood: Node3D
 var death_blood_pending := false
+var death_time := 0.0
+var death_length := 0.0
 
 func _ready() -> void:
 	rng.randomize()
@@ -130,6 +132,7 @@ func reset_arena() -> void:
 	active = true
 	jobs.clear()
 	death_blood_pending = false
+	death_time = 0.0
 	blood.clear()
 	health = 100
 	dead = false
@@ -251,6 +254,8 @@ func _die() -> void:
 	var clip := pick_clip("death", DEATHS)
 	hero.visual.player.speed_scale = test_speed
 	hero.visual.player.play(clip, 0.2)
+	death_time = 0.0
+	death_length = hero.visual.player.get_animation(clip).length
 	death_blood_pending = true
 	last_message = "Синий погиб: " + clip
 
@@ -270,9 +275,8 @@ func _process(delta: float) -> void:
 	if not active: return
 	if dead: hero.visual.player.speed_scale = test_speed
 	if dead and death_blood_pending:
-		var player: AnimationPlayer = hero.visual.player
-		var death_clip := player.assigned_animation
-		if death_clip.begins_with("Death_") and player.current_animation_position >= player.get_animation(death_clip).length * 0.85:
+		death_time += delta * test_speed
+		if death_time >= death_length * 0.85:
 			blood.spawn_death(_body_position(hero))
 			death_blood_pending = false
 	path_timer -= delta
@@ -315,6 +319,7 @@ func _process(delta: float) -> void:
 	_update_panel()
 
 func _body_position(actor: TestUnit3D) -> Vector3:
+	actor.visual.sample_pose()
 	var skeleton: Skeleton3D = actor.visual.get_node("Model/Knight_Root/Armature/Skeleton3D")
 	return skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone("pelvis")).origin
 
