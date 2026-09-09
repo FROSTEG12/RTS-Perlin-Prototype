@@ -13,8 +13,19 @@ func move(units: Array, cell: Vector2i, queued: bool) -> void:
 		result_received.emit(false, point, "Здесь нельзя пройти")
 		return
 	var occupied := {}
+	if world.training != null and world.training.has_method("manual_override"):
+		world.training.manual_override(units)
+		for other in world.player_units:
+			if other.battle_dead or other in units: continue
+			var center: Vector2i = world.map_renderer.world_to_cell(other.position)
+			for y in range(-1, 2):
+				for x in range(-1, 2):
+					var candidate := center + Vector2i(x, y)
+					var position: Vector3 = world.map_renderer.cell_to_world(candidate.x, candidate.y)
+					if position.distance_squared_to(other.position) < 0.85 * 0.85: occupied[candidate] = true
+			if not other.target_cells.is_empty(): occupied[other.target_cells.back()] = true
 	for unit: TestUnit3D in units:
-		if not is_instance_valid(unit):
+		if not is_instance_valid(unit) or unit.battle_dead:
 			continue
 		if not queued:
 			unit.order_revision += 1
@@ -33,12 +44,14 @@ func move(units: Array, cell: Vector2i, queued: bool) -> void:
 
 func _free_destination(center: Vector2i, occupied: Dictionary) -> Vector2i:
 	# Spread group endpoints over nearby land. This is not dynamic unit avoidance.
+	# With physical bodies, one-cell packing seals the inner ranks behind arrivals.
+	var spacing := 2 if world.training != null and world.training.has_method("find_unit_path") else 1
 	for radius in range(9):
 		for y in range(-radius, radius + 1):
 			for x in range(-radius, radius + 1):
 				if maxi(absi(x), absi(y)) != radius:
 					continue
-				var candidate := center + Vector2i(x, y)
+				var candidate := center + Vector2i(x, y) * spacing
 				if not occupied.has(candidate) and world.map_renderer.is_land(candidate):
 					return candidate
 	return Vector2i(-1, -1)
@@ -63,6 +76,10 @@ func _process(_delta: float) -> void:
 			continue
 		var route: Array[Vector2i] = world.pathfinder.find_path(
 			unit.order_anchor(world.map_renderer, job.queued), job.target)
+		if world.training != null and world.training.has_method("find_unit_path"):
+			var start: Vector2i = unit.order_anchor(world.map_renderer, true) if job.queued else world.map_renderer.world_to_cell(unit.position)
+			var avoidance: Array[Vector2i] = world.training.find_unit_path(unit, start, job.target)
+			if not avoidance.is_empty(): route = avoidance
 		var accepted: bool = unit.accept_move(route, world.map_renderer, job.queued)
 		result_received.emit(accepted, world.map_renderer.cell_to_world(job.target.x, job.target.y),
 			("Приказ добавлен" if job.queued else "Движение") if accepted else "Нет пути / очередь заполнена")

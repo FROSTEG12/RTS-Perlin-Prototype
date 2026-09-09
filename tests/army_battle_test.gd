@@ -28,7 +28,9 @@ func run() -> void:
 	assert(red.visual.get_node("Model").scene_file_path.ends_with("/red.scn"))
 	world.rts.set_selection(battle.living(1))
 	assert(world.rts.selected.size() == 50)
-	world.rts.orders.move([red], red.grid_cell + Vector2i(0, 2), false)
+	# Aim across the army: an adjacent occupied destination may legitimately
+	# resolve to the selected unit's own free cell after occupancy-aware placement.
+	world.rts.orders.move([red], blue.grid_cell, false)
 	for frame in 5: await process_frame
 	assert(not red.target_positions.is_empty())
 	battle.reset_arena()
@@ -51,7 +53,7 @@ func run() -> void:
 			await process_frame
 			frame_ms.append((Time.get_ticks_usec() - last) / 1000.0)
 			last = Time.get_ticks_usec()
-		if tick == 100:
+		if tick == 100 and DisplayServer.get_name() != "headless":
 			await RenderingServer.frame_post_draw
 			root.get_texture().get_image().save_png(OUT + "army-battle-test.png")
 		if tick % 300 == 0: print("ARMY_PROGRESS t=", tick / 10, " blue=", battle.living(0).size(), " red=", battle.living(1).size(), " hits=", battle.hits)

@@ -24,6 +24,7 @@ var hits := 0
 var death_bag: Array[int] = []
 var previous_death := 0
 var combat_pathfinder := GridPathfinder.new()
+var recovery_cursor := 0
 
 func _ready() -> void:
 	rng.randomize()
@@ -32,6 +33,7 @@ func _ready() -> void:
 	world.map_renderer.add_child(blood)
 	for unit in world.player_units:
 		unit.movement_guard = can_step
+		unit.movement_resolver = resolve_step
 	var panel := PanelContainer.new()
 	panel.name = "TrainingPanel" # Existing input guard excludes this panel.
 	world.get_node("UI").add_child(panel)
@@ -87,6 +89,7 @@ func reset_arena() -> void:
 	reservations.clear()
 	blood.clear()
 	combat_pathfinder.setup(world.current_cells, world.DEFAULT_MAP_SIZE)
+	combat_pathfinder.astar_grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
 	attacks = 0
 	hits = 0
 	clock = 0.0
@@ -150,6 +153,16 @@ func can_step(unit: TestUnit3D, next: Vector3) -> bool:
 			if after < BODY_DISTANCE * BODY_DISTANCE and after < unit.position.distance_squared_to(other.position) - 0.00001: return false
 	return true
 
+func resolve_step(unit: TestUnit3D, desired: Vector3) -> Vector3:
+	# Continuous local detour, never a teleport or disabling collision. Everyone
+	# prefers their right side, so opposing streams do not both yield into each other.
+	var step := desired - unit.position
+	for angle in [PI / 4.0, PI / 2.0, -PI / 4.0, -PI / 2.0, PI * 0.75, -PI * 0.75]:
+		var next: Vector3 = unit.position + step.rotated(Vector3.UP, angle)
+		if not world.map_renderer.is_land(world.map_renderer.world_to_cell(next)): continue
+		if can_step(unit, next): return next
+	return unit.position
+
 func _process(delta: float) -> void:
 	if states.is_empty() or world.is_generating: return
 	clock += delta
@@ -163,6 +176,7 @@ func _process(delta: float) -> void:
 			var point: Vector3 = skeleton.to_global(skeleton.get_bone_global_pose(bone).origin) if bone >= 0 else unit.global_position
 			blood.spawn_death(point)
 			deaths.erase(unit)
+	var recovery_count := _recover_manual_paths()
 	if not enabled: return
 	for unit in jobs.keys():
 		if not jobs.has(unit): continue
@@ -181,8 +195,9 @@ func _process(delta: float) -> void:
 		if job.time >= job.length:
 			_cancel(unit)
 			states[unit].cooldown = clock + rng.randf_range(0.3, 0.8)
-	var budget := PATH_BUDGET
+	var budget := PATH_BUDGET - recovery_count
 	for scanned in world.player_units.size():
+		if budget <= 0: break
 		cursor = (cursor + 1) % world.player_units.size()
 		var unit: TestUnit3D = world.player_units[cursor]
 		var state: Dictionary = states[unit]
@@ -197,6 +212,40 @@ func _process(delta: float) -> void:
 		set_autobattle(false)
 		message.text = "Победа синих" if blue > 0 else "Победа красных"
 	_update_counter()
+
+func find_unit_path(unit: TestUnit3D, start: Vector2i, finish: Vector2i) -> Array[Vector2i]:
+	var blocked: Array[Vector2i] = []
+	for other in world.player_units:
+		if other == unit or other.battle_dead: continue
+		var center: Vector2i = world.map_renderer.world_to_cell(other.position)
+		for y in range(-1, 2):
+			for x in range(-1, 2):
+				var cell := center + Vector2i(x, y)
+				if cell == start or not combat_pathfinder.astar_grid.is_in_boundsv(cell): continue
+				var point: Vector3 = world.map_renderer.cell_to_world(cell.x, cell.y)
+				if point.distance_squared_to(other.position) >= BODY_DISTANCE * BODY_DISTANCE: continue
+				if not combat_pathfinder.astar_grid.is_point_solid(cell):
+					blocked.append(cell)
+					combat_pathfinder.astar_grid.set_point_solid(cell, true)
+	var path: Array[Vector2i] = combat_pathfinder.find_path(start, finish)
+	for cell in blocked: combat_pathfinder.astar_grid.set_point_solid(cell, false)
+	return path
+
+func _recover_manual_paths() -> int:
+	var count := 0
+	for scanned in world.player_units.size():
+		recovery_cursor = (recovery_cursor + 1) % world.player_units.size()
+		var unit: TestUnit3D = world.player_units[recovery_cursor]
+		if unit.battle_dead or unit.movement_locked or unit.blocked_time < 0.5 or unit.target_cells.is_empty(): continue
+		if enabled and not states[unit].manual: continue
+		unit.blocked_time = 0.0
+		var finish: Vector2i = unit.move_orders.front() if not unit.move_orders.is_empty() else unit.target_cells.back()
+		var start: Vector2i = world.map_renderer.world_to_cell(unit.position)
+		var path := find_unit_path(unit, start, finish)
+		if not path.is_empty(): unit.repath_current(path, world.map_renderer)
+		count += 1
+		if count >= 2: break
+	return count
 
 func _think(unit: TestUnit3D) -> void:
 	var target: TestUnit3D

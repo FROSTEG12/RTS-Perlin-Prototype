@@ -9,6 +9,8 @@ var movement_locked := false # Temporary training action/death; other units unaf
 var team_id := 0
 var battle_dead := false
 var movement_guard: Callable
+var movement_resolver: Callable
+var blocked_time := 0.0
 var move_speed := MOVE_SPEED
 var display_name := "Рыцарь"
 var target_cells: Array[Vector2i] = []
@@ -97,6 +99,7 @@ func accept_move(path: Array[Vector2i], renderer: MapRenderer3D, queued: bool) -
 
 
 func stop_orders(renderer: MapRenderer3D) -> void:
+	blocked_time = 0.0
 	order_revision += 1
 	target_cells.clear()
 	target_positions.clear()
@@ -122,6 +125,7 @@ func place_on_cell(cell: Vector2i, world_position: Vector3) -> void:
 
 
 func follow_path(path: Array[Vector2i], renderer: MapRenderer3D) -> void:
+	blocked_time = 0.0
 	move_orders.clear()
 	preview_dirty = true
 	target_cells.clear()
@@ -174,10 +178,15 @@ func _process(delta: float) -> void:
 	var before := global_position
 	var local_before := position
 	var remaining := move_speed * delta
+	var obstructed := false
 	while remaining > 0.0 and not target_positions.is_empty():
 		var distance := position.distance_to(target_positions[0])
 		var next := position.move_toward(target_positions[0], remaining)
-		if movement_guard.is_valid() and not movement_guard.call(self, next): break
+		if movement_guard.is_valid() and not movement_guard.call(self, next):
+			obstructed = true
+			if not movement_resolver.is_valid(): break
+			next = movement_resolver.call(self, next)
+			if next.distance_squared_to(position) < 0.0000001: break
 		position = next
 		remaining -= distance
 		if position.distance_squared_to(target_positions[0]) > 0.0001:
@@ -187,10 +196,26 @@ func _process(delta: float) -> void:
 		if not move_orders.is_empty() and grid_cell == move_orders.front():
 			move_orders.pop_front()
 		preview_dirty = true
+	blocked_time = blocked_time + delta if obstructed and not target_positions.is_empty() else 0.0
 	visual.set_motion((position - local_before) / maxf(delta, 0.00001), delta)
 	if is_instance_valid(trail_wear):
 		trail_wear.record_movement(get_instance_id(), before, global_position)
 	_rebuild_path_preview()
+
+
+func repath_current(path: Array[Vector2i], renderer: MapRenderer3D) -> void:
+	# Replace only the blocked leg, retaining Shift-queued destinations and routes.
+	var orders := move_orders.duplicate()
+	var tail: Array[Vector2i] = []
+	if not orders.is_empty():
+		var end := target_cells.find(orders.front())
+		if end >= 0: tail.assign(target_cells.slice(end + 1))
+	follow_path(path, renderer)
+	move_orders.assign(orders)
+	for cell in tail:
+		target_cells.append(cell)
+		target_positions.append(renderer.cell_to_world(cell.x, cell.y))
+	preview_dirty = true
 
 
 func _rebuild_path_preview() -> void:
