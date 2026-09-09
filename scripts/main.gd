@@ -33,6 +33,7 @@ var weather: Node3D
 var rts: Control
 var player_units: Array[TestUnit3D] = []
 var training: Node3D
+var initial_squad_size := 5 # Optional interactive test: -- --units=150.
 
 
 func _ready() -> void:
@@ -56,6 +57,17 @@ func _ready() -> void:
 	building_button.toggled.connect(_on_building_button_toggled)
 	generate_world()
 	_sync_weather_controls()
+	if initial_squad_size > 5:
+		var center := Vector3.ZERO
+		var occupied := {}
+		for unit in player_units:
+			center += unit.global_position
+			assert(map_renderer.is_land(unit.grid_cell) and not occupied.has(unit.grid_cell))
+			occupied[unit.grid_cell] = true
+		game_camera.size = game_camera.MAX_SIZE
+		game_camera.focus_on(center / player_units.size())
+		rts.set_selection(player_units)
+		print("INTERACTIVE_SQUAD_READY count=", player_units.size(), " unique_land_cells=", occupied.size())
 
 
 func _process(delta: float) -> void:
@@ -191,7 +203,7 @@ func generate_world() -> void:
 	))
 	game_camera.configure_map(map_renderer.get_half_extent())
 	var spawn_cell := generator.find_mainland_spawn(current_cells, DEFAULT_MAP_SIZE)
-	var used: Array[Vector2i] = []
+	var used := {}
 	for unit in player_units:
 		var chosen := spawn_cell
 		var found := false
@@ -208,14 +220,15 @@ func generate_world() -> void:
 					if not map_renderer.is_land(candidate):
 						continue
 					var occupied := false
-					for taken in used:
-						if Vector2(candidate).distance_to(Vector2(taken)) < 2.0:
-							occupied = true
+					# Integer cells <2 units apart are exactly these 3x3 neighbors.
+					for oy in range(-1, 2):
+						for ox in range(-1, 2):
+							if used.has(candidate + Vector2i(ox, oy)): occupied = true
 					if not occupied and not pathfinder.find_path(spawn_cell, candidate).is_empty():
 						chosen = candidate
 						found = true
 						break
-		used.append(chosen)
+		used[chosen] = true
 		unit.set_trail_wear(map_renderer.trail_wear)
 		unit.place_on_cell(chosen, map_renderer.cell_to_world(chosen.x, chosen.y))
 	seed_label.text = "Seed: %d  •  Вода: %d%%" % [world_seed, int(map_data["water_percent"])]
@@ -324,9 +337,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _setup_rts_controls() -> void:
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--units="):
+			var value := argument.trim_prefix("--units=")
+			if value.is_valid_int(): initial_squad_size = clampi(int(value), 1, 300)
 	player_units.append(test_unit)
 	var scene := preload("res://scenes/worker_unit.tscn")
-	for index in range(4):
+	for index in range(initial_squad_size - 1):
 		var unit := scene.instantiate() as TestUnit3D
 		unit.name = "Worker_%d" % (index + 2)
 		unit.display_name = "Синий рыцарь №%d" % (index + 2)
