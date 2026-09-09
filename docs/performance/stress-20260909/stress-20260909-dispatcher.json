@@ -1,0 +1,8 @@
+{
+	"enqueue_ms": 19.751,
+	"frames": 73,
+	"rejected": 11,
+	"requested": 300,
+	"submitted": 289,
+	"until_drained_ms": 1774.389
+}
