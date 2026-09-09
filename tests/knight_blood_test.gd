@@ -15,6 +15,7 @@ func simulate(seconds: float) -> void:
 			unit.visual.player.advance(1.0 / 60)
 
 func snap(label: String) -> void:
+	blood.flush()
 	await process_frame
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png(OUT + "knight-blood-" + label + ".png")
@@ -63,10 +64,9 @@ func run() -> void:
 		unit.set_process(false)
 		unit.visual.player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	position_pair()
-	assert(blood.pool.size() == 96 and blood.variants.size() == 6)
-	assert(world.map_renderer.terrain.layers & blood.GROUND_LAYER)
-	for mesh in training.hero.visual.find_children("*", "MeshInstance3D", true, false):
-		assert(not (mesh.layers & blood.GROUND_LAYER))
+	assert(blood.get_child_count() == 0, "No stacked Decal projectors")
+	assert(blood.image.get_format() == Image.FORMAT_RG8)
+	assert(world.map_renderer.terrain_material.get_shader_parameter("blood_field_texture") == blood.texture)
 	simulate(2)
 	assert(blood.spawned == 0)
 	training.bags["attack"] = ["Attack_Splash"]
@@ -92,10 +92,15 @@ func run() -> void:
 	assert(training.dead and not training.death_blood_pending)
 	assert(blood.spawned == 8, "2 NPC contacts + 5 damaging hits + one death pool")
 	await snap("death")
+	world.get_node("UI").visible = false
+	world.game_camera.size = 3.8
+	await snap("noise-death-close")
+	world.get_node("UI").visible = true
+	world.game_camera.size = 7
 	simulate(10)
 	assert(blood.spawned == 8, "Death pool must not repeat")
 	blood._process(135)
-	assert(blood.pool[0].modulate.a > 0.4 and blood.pool[0].modulate.a < 0.6)
+	assert(blood.active_count() == 8 and not blood.merged.is_empty())
 	blood._process(16)
 	assert(blood.active_count() == 0)
 	assert(not blood.spawn_death(Vector3(999, 0, 999)))
@@ -108,8 +113,34 @@ func run() -> void:
 				water_checked = true
 				break
 	assert(water_checked)
+	# Repeated stationary impacts must grow a common field, never lighten existing
+	# coverage or stamp a brighter outline over a previous patch.
+	assert(blood.spawn_hit(center, Vector3.RIGHT))
+	blood.flush()
+	var first: Dictionary = blood.merged.duplicate(true)
+	await snap("noise-one")
+	var started := Time.get_ticks_usec()
+	for index in 11: assert(blood.spawn_hit(center, Vector3.RIGHT))
+	blood.flush()
+	print("BLOOD_11_CONTACTS_AND_UPLOAD_US ", Time.get_ticks_usec() - started)
+	for pixel: Vector2i in first:
+		assert(blood.merged.has(pixel) and blood.merged[pixel].x >= first[pixel].x)
+	assert(blood.merged.size() > first.size() * 1.3, "Stationary spray must spread")
+	await snap("noise-twelve")
+	world.get_node("UI").visible = false
+	world.game_camera.size = 3.8
+	await snap("noise-twelve-close")
+	world.get_node("UI").visible = true
+	world.game_camera.size = 7
+	var stable: PackedByteArray = blood.image.get_data()
+	var uploads: int = blood.upload_count
+	blood.flush()
+	assert(blood.image.get_data() == stable and blood.upload_count == uploads)
 	for index in 110: assert(blood.spawn_hit(center, Vector3.RIGHT))
-	assert(blood.active_count() == 96 and blood.get_child_count() == 96)
+	blood.flush()
+	assert(blood.active_count() == 96 and blood.get_child_count() == 0)
+	assert(blood.dry_pixels.size() <= 65536)
+	await snap("noise-saturated")
 	training.reset_arena()
 	assert(blood.active_count() == 0 and not training.death_blood_pending)
 	position_pair()
@@ -121,5 +152,6 @@ func run() -> void:
 	await snap("night")
 	world.generate_world()
 	assert(blood.active_count() == 0)
-	print("KNIGHT_BLOOD_PASS actual_contacts missed_cancelled death_once terrain_only water_edge cap96 fade reset regeneration")
+	assert(world.map_renderer.terrain_material.get_shader_parameter("blood_field_texture") == blood.texture)
+	print("KNIGHT_BLOOD_PASS actual_contacts missed_cancelled death_once terrain_only water_edge cap96 fade reset regeneration noise_union_stationary_spread")
 	quit()

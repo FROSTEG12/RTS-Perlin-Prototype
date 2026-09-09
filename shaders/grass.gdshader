@@ -10,6 +10,10 @@ uniform sampler2D trail_soil_texture : repeat_enable, filter_linear_mipmap;
 uniform float trail_pixel_size = 0.08;
 uniform float trail_soil_scale = 0.28;
 uniform bool trails_enabled = true;
+uniform sampler2D blood_field_texture : filter_linear, repeat_disable;
+uniform bool blood_enabled = false;
+uniform vec3 blood_fresh_color : source_color = vec3(0.40, 0.065, 0.075);
+uniform vec3 blood_dry_color : source_color = vec3(0.27, 0.060, 0.045);
 uniform float texture_scale = 0.095;
 uniform float map_world_size = 104.0;
 uniform vec3 wet_sand_color : source_color = vec3(0.69, 0.63, 0.49);
@@ -81,6 +85,30 @@ void fragment() {
 		soil = floor(soil * 24.0 + 0.5) / 24.0;
 		soil *= vec3(1.25, 1.15, 1.0);
 		ALBEDO = mix(ALBEDO, soil, coverage);
+	}
+	if (blood_enabled) {
+		vec2 grid = world_position.xz / 0.025;
+		vec2 fixed_point = (floor(grid) + vec2(0.5)) * 0.025;
+		vec2 blood = texture(blood_field_texture, fixed_point / map_world_size + vec2(0.5)).rg;
+		// Two fixed noise scales create lobes and pixel-sized broken edges.
+		// No TIME or per-stamp colour: intersections merge into one material.
+		float shape = value_noise(fixed_point * 9.0 + vec2(31.7, 9.4));
+		float detail = hash21(floor(grid) + vec2(17.0, 83.0));
+		float threshold = mix(0.045, 0.92, shape * 0.35 + detail * 0.65);
+		float coverage = step(threshold, blood.r);
+		vec2 footprint = fwidth(grid);
+		float distant = smoothstep(1.0, 2.0, max(footprint.x, footprint.y));
+		coverage = mix(coverage, smoothstep(0.10, 0.85, blood.r), distant);
+		coverage *= smoothstep(0.015, 0.10, blood.r) * 0.94;
+		coverage *= smoothstep(-0.11, -0.07, world_position.y);
+		float freshness = floor(blood.g * 3.0 + 0.5) / 3.0;
+		vec3 pigment = mix(blood_dry_color, blood_fresh_color, freshness);
+		// Four discrete pigment tones per age stage, not a noise-driven gradient.
+		// World-anchored cells share a palette even where contacts overlap.
+		float mottling = value_noise(fixed_point * 18.0 + vec2(92.0, 4.0));
+		float tone = floor(clamp(mottling * 0.85 + (1.0 - blood.r) * 0.15, 0.0, 0.999) * 4.0) / 3.0;
+		pigment *= mix(0.48, 1.4, tone);
+		ALBEDO = mix(ALBEDO, pigment, coverage);
 	}
 	float cloud_shadow = projected_cloud_density(
 		world_position.xz + cloud_shadow_offset, TIME, cloud_wind_direction,
