@@ -241,6 +241,7 @@ func run() -> void:
 	create_timer(1200).timeout.connect(func(): push_error("STRESS_TIMEOUT"); quit(1))
 	world = load("res://scenes/main.tscn").instantiate()
 	world.set_script(preload("res://tests/stress_world.gd"))
+	world.battle_test = false
 	root.add_child(world)
 	world.simulation_speed = 0
 	world.weather.climate.set_rain(false)

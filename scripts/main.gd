@@ -34,6 +34,7 @@ var rts: Control
 var player_units: Array[TestUnit3D] = []
 var training: Node3D
 var initial_squad_size := 5 # Optional interactive test: -- --units=150.
+var battle_test := true # Temporary 50 vs 50 sandbox; --training restores the duel.
 
 
 func _ready() -> void:
@@ -47,7 +48,7 @@ func _ready() -> void:
 	weather.setup(game_camera, test_unit, world_seed)
 	_setup_weather_controls()
 	_setup_rts_controls()
-	training = preload("res://scripts/knight_training.gd").new()
+	training = preload("res://scripts/army_battle.gd").new() if battle_test else preload("res://scripts/knight_training.gd").new()
 	training.name = "KnightTraining"
 	training.world = self
 	add_child(training)
@@ -66,7 +67,7 @@ func _ready() -> void:
 			occupied[unit.grid_cell] = true
 		game_camera.size = game_camera.MAX_SIZE
 		game_camera.focus_on(center / player_units.size())
-		rts.set_selection(player_units)
+		if not battle_test: rts.set_selection(player_units)
 		print("INTERACTIVE_SQUAD_READY count=", player_units.size(), " unique_land_cells=", occupied.size())
 
 
@@ -338,9 +339,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _setup_rts_controls() -> void:
 	for argument in OS.get_cmdline_user_args():
+		if argument == "--training": battle_test = false
 		if argument.begins_with("--units="):
+			battle_test = false
 			var value := argument.trim_prefix("--units=")
 			if value.is_valid_int(): initial_squad_size = clampi(int(value), 1, 300)
+	if battle_test: initial_squad_size = 100
 	player_units.append(test_unit)
 	var scene := preload("res://scenes/worker_unit.tscn")
 	for index in range(initial_squad_size - 1):
@@ -349,6 +353,12 @@ func _setup_rts_controls() -> void:
 		unit.display_name = "Синий рыцарь №%d" % (index + 2)
 		map_renderer.add_child(unit)
 		player_units.append(unit)
+	if battle_test:
+		for index in player_units.size():
+			var unit := player_units[index]
+			unit.team_id = 0 if index < 50 else 1
+			unit.display_name = ("Синий" if unit.team_id == 0 else "Красный") + " рыцарь №%d" % (index % 50 + 1)
+			if unit.team_id == 1: unit.visual.set_model(preload("res://assets/units/low_poly_knight/red.scn"))
 	rts = preload("res://scripts/rts_controller.gd").new()
 	rts.name = "RTSControls"
 	rts.world = self

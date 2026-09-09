@@ -6,6 +6,9 @@ const PATH_COLOR := Color(1.0, 0.73, 0.08, 0.92)
 
 var grid_cell := Vector2i.ZERO
 var movement_locked := false # Temporary training action/death; other units unaffected.
+var team_id := 0
+var battle_dead := false
+var movement_guard: Callable
 var move_speed := MOVE_SPEED
 var display_name := "Рыцарь"
 var target_cells: Array[Vector2i] = []
@@ -75,7 +78,7 @@ func order_anchor(renderer: MapRenderer3D, queued: bool) -> Vector2i:
 
 
 func accept_move(path: Array[Vector2i], renderer: MapRenderer3D, queued: bool) -> bool:
-	if movement_locked: return false
+	if movement_locked or battle_dead: return false
 	if path.is_empty() or (queued and move_orders.size() >= 32):
 		return false
 	if queued and not move_orders.is_empty() and move_orders.back() == path.back():
@@ -173,7 +176,9 @@ func _process(delta: float) -> void:
 	var remaining := move_speed * delta
 	while remaining > 0.0 and not target_positions.is_empty():
 		var distance := position.distance_to(target_positions[0])
-		position = position.move_toward(target_positions[0], remaining)
+		var next := position.move_toward(target_positions[0], remaining)
+		if movement_guard.is_valid() and not movement_guard.call(self, next): break
+		position = next
 		remaining -= distance
 		if position.distance_squared_to(target_positions[0]) > 0.0001:
 			break

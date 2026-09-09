@@ -32,6 +32,7 @@ func reset_pair(direction: Vector3, distance: float) -> void:
 func run() -> void:
 	create_timer(120).timeout.connect(func(): push_error("COMBO_TEST_TIMEOUT"); quit(1))
 	world = load("res://scenes/main.tscn").instantiate()
+	world.battle_test = false
 	root.add_child(world)
 	world.set_process(false)
 	training = world.training

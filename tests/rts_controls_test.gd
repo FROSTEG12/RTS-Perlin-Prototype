@@ -30,6 +30,7 @@ func key(code: int) -> void:
 func run() -> void:
 	create_timer(100).timeout.connect(func(): push_error("RTS TEST TIMEOUT"); quit(1))
 	world = load("res://scenes/main.tscn").instantiate()
+	world.battle_test = false
 	root.add_child(world)
 	world.set_process(false)
 	world.weather.climate.set_rain(false)

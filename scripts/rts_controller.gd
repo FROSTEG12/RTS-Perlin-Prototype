@@ -85,7 +85,7 @@ func set_selection(next: Array) -> void:
 			unit.set_selected(false)
 	selected.clear()
 	for unit in next:
-		if is_instance_valid(unit) and unit not in selected:
+		if is_instance_valid(unit) and not unit.battle_dead and unit not in selected:
 			selected.append(unit)
 			unit.set_selected(true)
 	_update_status()
@@ -154,6 +154,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			if not selected.is_empty():
 				var point: Vector3 = world.game_camera.screen_to_ground(event.position, MapRenderer3D.LAND_Y)
 				if point.is_finite():
+					_manual_override()
 					orders.move(selected, world.map_renderer.world_to_cell(point), event.shift_pressed)
 			get_viewport().set_input_as_handled()
 		elif event.button_index == MOUSE_BUTTON_MIDDLE and event.pressed:
@@ -214,8 +215,14 @@ func _finish_selection() -> void:
 
 
 func stop_selected() -> void:
+	_manual_override()
 	orders.stop(selected)
 	_update_status()
+
+
+func _manual_override() -> void:
+	if world.training != null and world.training.has_method("manual_override"):
+		world.training.manual_override(selected)
 
 
 func focus_selected() -> void:
@@ -238,7 +245,7 @@ func _set_hover(unit: TestUnit3D) -> void:
 func _process(delta: float) -> void:
 	var surviving: Array[TestUnit3D] = []
 	for unit in selected:
-		if is_instance_valid(unit):
+		if is_instance_valid(unit) and not unit.battle_dead:
 			surviving.append(unit)
 	if surviving.size() != selected.size():
 		selected = surviving

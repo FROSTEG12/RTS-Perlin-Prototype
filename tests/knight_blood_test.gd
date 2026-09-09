@@ -31,6 +31,7 @@ func position_pair() -> void:
 func run() -> void:
 	create_timer(120).timeout.connect(func(): push_error("BLOOD_TEST_TIMEOUT"); quit(1))
 	world = load("res://scenes/main.tscn").instantiate()
+	world.battle_test = false
 	root.add_child(world)
 	world.set_process(false)
 	world.simulation_speed = 0
