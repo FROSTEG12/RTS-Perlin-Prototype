@@ -1,7 +1,15 @@
 extends Node3D
 ## Visual-only locomotion; the RTS controller owns position and path following.
 const TURN_SPEED := 12.0
+var animation_phase := 0.0
+static var next_phase_index := 0
 @onready var player: AnimationPlayer = $Model/AnimationPlayer
+
+func _ready() -> void:
+	# Golden-ratio sequence spreads phases even in small squads. No per-frame RNG,
+	# no movement-speed jitter, and no edits to shared Animation resources.
+	animation_phase = fposmod(next_phase_index * 0.61803398875, 1.0)
+	next_phase_index += 1
 
 func set_model(scene: PackedScene) -> void:
 	var old := $Model
@@ -19,6 +27,7 @@ func set_motion(velocity: Vector3, delta: float) -> void:
 	var clip := ("walk" if velocity.length() < 1.6 and player.has_animation("walk") else "jog") if moving else "idle"
 	if player.current_animation != clip:
 		player.play(clip, 0.16)
+		player.seek(animation_phase * player.get_animation(clip).length, false)
 	# Base gait at the prototype's 2.25 world units/s; visual playback only.
 	var gait_speed := 2.25
 	if $Model.has_meta("knight_gait"):
@@ -31,4 +40,5 @@ func reset_pose() -> void:
 	if not is_node_ready(): return
 	player.speed_scale = 1.0
 	player.play("idle", 0.0)
+	player.seek(animation_phase * player.get_animation("idle").length, false)
 	player.advance(0.0)

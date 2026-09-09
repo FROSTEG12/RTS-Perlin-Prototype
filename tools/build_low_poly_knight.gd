@@ -51,6 +51,27 @@ func build(source: String, output: String) -> void:
 			for key in count:
 				var value: Vector3 = animation.track_get_key_value(track, key)
 				animation.track_set_key_value(track, key, value - drift * animation.track_get_key_time(track, key) / animation.length)
+	# Combo has real forward travel. Extract it for the actor controller rather
+	# than blending the displaced pelvis back to the origin when Idle starts.
+	var combo := player.get_animation("Attack_Combo")
+	var skeleton: Skeleton3D = model.find_child("Skeleton3D", true, false)
+	var pelvis_parent := skeleton.get_bone_parent(skeleton.find_bone("pelvis"))
+	var parent_basis := skeleton.get_bone_global_rest(pelvis_parent).basis
+	for track in combo.get_track_count():
+		if combo.track_get_type(track) != Animation.TYPE_POSITION_3D: continue
+		if not str(combo.track_get_path(track)).ends_with(":pelvis"): continue
+		var curve := Animation.new()
+		curve.length = combo.length
+		curve.add_track(Animation.TYPE_POSITION_3D)
+		curve.track_set_path(0, NodePath("."))
+		curve.track_set_interpolation_type(0, combo.track_get_interpolation_type(track))
+		var start: Vector3 = combo.track_get_key_value(track, 0)
+		for key in combo.track_get_key_count(track):
+			var value: Vector3 = combo.track_get_key_value(track, key)
+			var horizontal := Vector3(value.x - start.x, 0, value.z - start.z)
+			curve.track_insert_key(0, combo.track_get_key_time(track, key), parent_basis * horizontal * 0.75)
+			combo.track_set_key_value(track, key, Vector3(start.x, value.y, start.z))
+		combo.set_meta("root_motion_curve", curve)
 	var library := player.get_animation_library("")
 	for pair in [["idle", "Idle"], ["walk", "Walk"], ["jog", "Run"]]:
 		library.add_animation(pair[0], player.get_animation(pair[1]))

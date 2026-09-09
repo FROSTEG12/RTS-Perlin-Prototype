@@ -4,6 +4,7 @@ const RED := preload("res://assets/units/low_poly_knight/red.scn")
 const ATTACKS := ["Attack_Combo", "Attack_Splash"]
 const DEATHS := ["Death_1", "Death_2", "Death_3"]
 const REACH := 1.65
+const MIN_BODY_DISTANCE := 0.95 # Torso/shoulder clearance, excluding the weapon swing.
 var world: Node3D
 var hero: TestUnit3D
 var npc: TestUnit3D
@@ -220,10 +221,13 @@ func _start_attack(actor: TestUnit3D, target: TestUnit3D) -> void:
 	var clip := pick_clip("attack", ATTACKS)
 	actor.visual.player.speed_scale = test_speed
 	actor.visual.player.play(clip, 0.18)
-	var length: float = actor.visual.player.get_animation(clip).length
+	var animation: Animation = actor.visual.player.get_animation(clip)
+	var length: float = animation.length
+	var motion: Animation = animation.get_meta("root_motion_curve") if animation.has_meta("root_motion_curve") else null
 	# Two contacts for combo, one for splash. Temporary hit timing, not sword collision.
 	var impacts: Array = [0.95, 2.35] if clip == "Attack_Combo" else [0.65]
-	jobs[actor] = {"target": target, "clip": clip, "time": 0.0, "length": length, "impacts": impacts}
+	jobs[actor] = {"target": target, "clip": clip, "time": 0.0, "length": length, "impacts": impacts,
+		"motion": motion, "motion_offset": Vector3.ZERO, "motion_origin": actor.global_position, "heading": _angle(actor, target)}
 	last_message = ("Синий: " if actor == hero else "Красный: ") + clip
 
 func _die() -> void:
@@ -261,9 +265,11 @@ func _process(delta: float) -> void:
 	for actor in jobs.keys():
 		if not jobs.has(actor): continue
 		var job: Dictionary = jobs[actor]
-		actor.visual.rotation.y = lerp_angle(actor.visual.rotation.y, _angle(actor, job.target), 1.0 - exp(-12.0 * delta))
+		# Do not steer a lunge around the opponent halfway through its animation.
+		actor.visual.rotation.y = lerp_angle(actor.visual.rotation.y, job.heading, 1.0 - exp(-12.0 * delta))
 		actor.visual.player.speed_scale = test_speed
 		job.time += delta * test_speed
+		_apply_root_motion(actor, job)
 		while not job.impacts.is_empty() and job.time >= job.impacts[0]:
 			job.impacts.pop_front()
 			if actor.global_position.distance_to(job.target.global_position) <= REACH + 0.35:
@@ -290,6 +296,41 @@ func _process(delta: float) -> void:
 			elif path_timer <= 0: _approach(npc, hero)
 	if path_timer <= 0: path_timer = 0.5
 	_update_panel()
+
+func _apply_root_motion(actor: TestUnit3D, job: Dictionary) -> void:
+	var curve: Animation = job.motion
+	if curve == null: return
+	var offset := curve.position_track_interpolate(0, minf(job.time, curve.length))
+	var authored_distance: float = offset.distance_to(job.motion_offset)
+	var desired: Vector3 = job.motion_origin + Basis(Vector3.UP, job.heading) * offset
+	# Follow the absolute authored trajectory, bounded by this frame's travel.
+	# After a blocked lunge, a retreating curve ahead of us must NOT push us back
+	# by the full discarded displacement. Nor may clearing contact teleport us.
+	var motion_step := actor.global_position.move_toward(desired, authored_distance) - actor.global_position
+	job.motion_offset = offset
+	var before := actor.global_position
+	var start := before
+	var steps := maxi(1, ceili(motion_step.length() / 0.08))
+	for index in steps:
+		var candidate := start + motion_step / steps
+		var cell: Vector2i = world.map_renderer.world_to_cell(candidate)
+		if not world.map_renderer.is_land(cell): break
+		var blocked := false
+		for offset_point in [Vector3(0.28, 0, 0), Vector3(-0.28, 0, 0), Vector3(0, 0, 0.28), Vector3(0, 0, -0.28)]:
+			if not world.map_renderer.is_land(world.map_renderer.world_to_cell(candidate + offset_point)):
+				blocked = true
+				break
+		for other in world.player_units + [npc]:
+			if other == actor: continue
+			if candidate.distance_to(other.global_position) < MIN_BODY_DISTANCE and candidate.distance_to(other.global_position) < start.distance_to(other.global_position):
+				blocked = true
+				break
+		if blocked: break
+		start = candidate
+	actor.global_position = start
+	actor.grid_cell = world.map_renderer.world_to_cell(start)
+	if is_instance_valid(actor.trail_wear):
+		actor.trail_wear.record_movement(actor.get_instance_id(), before, start)
 
 func _update_panel() -> void:
 	health_label.text = "Синий: %d / 100 HP  ·  Красный: ∞" % health
