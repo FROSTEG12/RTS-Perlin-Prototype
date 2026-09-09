@@ -5,6 +5,8 @@ const MOVE_SPEED := 2.25
 const PATH_COLOR := Color(1.0, 0.73, 0.08, 0.92)
 
 var grid_cell := Vector2i.ZERO
+var movement_locked := false # Temporary training action/death; other units unaffected.
+var move_speed := MOVE_SPEED
 var display_name := "Рыцарь"
 var target_cells: Array[Vector2i] = []
 var target_positions: Array[Vector3] = []
@@ -73,6 +75,7 @@ func order_anchor(renderer: MapRenderer3D, queued: bool) -> Vector2i:
 
 
 func accept_move(path: Array[Vector2i], renderer: MapRenderer3D, queued: bool) -> bool:
+	if movement_locked: return false
 	if path.is_empty() or (queued and move_orders.size() >= 32):
 		return false
 	if queued and not move_orders.is_empty() and move_orders.back() == path.back():
@@ -96,7 +99,8 @@ func stop_orders(renderer: MapRenderer3D) -> void:
 	target_positions.clear()
 	move_orders.clear()
 	grid_cell = renderer.world_to_cell(global_position)
-	visual.set_motion(Vector3.ZERO, 0.016)
+	if not movement_locked:
+		visual.set_motion(Vector3.ZERO, 0.016)
 	preview_dirty = true
 	_rebuild_path_preview()
 
@@ -160,12 +164,13 @@ func cancel_movement(renderer: MapRenderer3D) -> void:
 
 
 func _process(delta: float) -> void:
+	if movement_locked: return
 	if target_positions.is_empty():
 		visual.set_motion(Vector3.ZERO, delta)
 		return
 	var before := global_position
 	var local_before := position
-	var remaining := MOVE_SPEED * delta
+	var remaining := move_speed * delta
 	while remaining > 0.0 and not target_positions.is_empty():
 		var distance := position.distance_to(target_positions[0])
 		position = position.move_toward(target_positions[0], remaining)

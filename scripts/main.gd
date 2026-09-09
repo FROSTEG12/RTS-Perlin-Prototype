@@ -32,6 +32,7 @@ var simulation_speed := 1.0
 var weather: Node3D
 var rts: Control
 var player_units: Array[TestUnit3D] = []
+var training: Node3D
 
 
 func _ready() -> void:
@@ -45,6 +46,10 @@ func _ready() -> void:
 	weather.setup(game_camera, test_unit, world_seed)
 	_setup_weather_controls()
 	_setup_rts_controls()
+	training = preload("res://scripts/knight_training.gd").new()
+	training.name = "KnightTraining"
+	training.world = self
+	add_child(training)
 	time_slider.value_changed.connect(_on_time_slider_changed)
 	_set_time_of_day(current_time)
 	new_map_button.pressed.connect(_on_new_map_pressed)
@@ -219,6 +224,8 @@ func generate_world() -> void:
 	if rts != null:
 		rts.grid_overlay.refresh()
 	game_camera.focus_on(test_unit.global_position)
+	if training != null:
+		training.reset_arena()
 
 
 func _setup_weather_controls() -> void:
@@ -319,17 +326,11 @@ func _unhandled_input(event: InputEvent) -> void:
 func _setup_rts_controls() -> void:
 	player_units.append(test_unit)
 	var scene := preload("res://scenes/worker_unit.tscn")
-	var models := [preload("res://assets/units/kaykit/Ranger.scn"),
-		preload("res://assets/units/kaykit/Barbarian.scn"),
-		preload("res://assets/units/kaykit/Rogue.scn"),
-		preload("res://assets/units/kaykit/Rogue_Hooded.scn")]
-	var names := ["Лучник", "Варвар", "Разбойник", "Разбойник в капюшоне"]
 	for index in range(4):
 		var unit := scene.instantiate() as TestUnit3D
 		unit.name = "Worker_%d" % (index + 2)
-		unit.display_name = names[index]
+		unit.display_name = "Синий рыцарь №%d" % (index + 2)
 		map_renderer.add_child(unit)
-		unit.visual.set_model(models[index])
 		player_units.append(unit)
 	rts = preload("res://scripts/rts_controller.gd").new()
 	rts.name = "RTSControls"

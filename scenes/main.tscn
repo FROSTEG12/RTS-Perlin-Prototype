@@ -5,7 +5,7 @@
 [ext_resource path="res://scripts/game_camera.gd" type="Script" id="3_camera"]
 [ext_resource path="res://scripts/test_unit.gd" type="Script" id="4_unit"]
 [ext_resource path="res://Compositor/Color grading/ColorGrading.gd" type="Script" id="5_grade"]
-[ext_resource path="res://assets/units/kaykit/Knight.scn" type="PackedScene" id="6_worker"]
+[ext_resource path="res://assets/units/low_poly_knight/blue.scn" type="PackedScene" id="6_worker"]
 [ext_resource path="res://scripts/worker_visual.gd" type="Script" id="7_worker_visual"]
 
 [sub_resource type="CompositorEffect" id="ColorGrading_game"]

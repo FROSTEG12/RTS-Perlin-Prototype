@@ -171,6 +171,9 @@ func unit_screen_rect(unit: TestUnit3D) -> Rect2:
 
 
 func over_ui(point: Vector2) -> bool:
+	var training_panel := world.get_node_or_null("UI/TrainingPanel")
+	if training_panel != null and training_panel.is_visible_in_tree() and training_panel.get_global_rect().has_point(point):
+		return true
 	for panel in [world.get_node("UI/MapControls"), get_node("UnitCommands")]:
 		if panel.is_visible_in_tree() and panel.get_global_rect().has_point(point):
 			return true
