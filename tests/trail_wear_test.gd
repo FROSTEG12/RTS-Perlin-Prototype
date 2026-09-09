@@ -1,5 +1,5 @@
 extends SceneTree
-const WEAR = preload("res://scripts/trail_wear.gd")
+const WEAR = preload("res://scripts/effects/trail_wear.gd")
 
 func field(size: float = 104.0, water: bool = false) -> Node:
 	var result := WEAR.new()

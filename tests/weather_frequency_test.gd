@@ -1,5 +1,5 @@
 extends SceneTree
-const MODEL = preload("res://scripts/weather_model.gd")
+const MODEL = preload("res://scripts/environment/weather_model.gd")
 func _initialize() -> void:
 	var events := 0
 	var dry_days := 0

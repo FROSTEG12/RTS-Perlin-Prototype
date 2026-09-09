@@ -1,12 +1,12 @@
 [gd_scene load_steps=14 format=3]
 
-[ext_resource path="res://scripts/main.gd" type="Script" id="1_main"]
-[ext_resource path="res://scripts/map_renderer.gd" type="Script" id="2_renderer"]
-[ext_resource path="res://scripts/game_camera.gd" type="Script" id="3_camera"]
-[ext_resource path="res://scripts/test_unit.gd" type="Script" id="4_unit"]
+[ext_resource path="res://scripts/app/main.gd" type="Script" id="1_main"]
+[ext_resource path="res://scripts/world/map_renderer.gd" type="Script" id="2_renderer"]
+[ext_resource path="res://scripts/input/game_camera.gd" type="Script" id="3_camera"]
+[ext_resource path="res://scripts/units/unit.gd" type="Script" id="4_unit"]
 [ext_resource path="res://Compositor/Color grading/ColorGrading.gd" type="Script" id="5_grade"]
 [ext_resource path="res://assets/units/low_poly_knight/blue.scn" type="PackedScene" id="6_worker"]
-[ext_resource path="res://scripts/worker_visual.gd" type="Script" id="7_worker_visual"]
+[ext_resource path="res://scripts/units/unit_visual.gd" type="Script" id="7_worker_visual"]
 
 [sub_resource type="CompositorEffect" id="ColorGrading_game"]
 script = ExtResource("5_grade")
@@ -64,7 +64,6 @@ directional_shadow_max_distance = 80.0
 [node name="MapRenderer" type="Node3D" parent="."]
 script = ExtResource("2_renderer")
 
-[node name="TemporaryBuildings" type="Node3D" parent="."]
 
 [node name="Seabed" type="MeshInstance3D" parent="MapRenderer"]
 cast_shadow = 0
@@ -81,22 +80,22 @@ cast_shadow = 0
 
 [node name="Resources" type="Node3D" parent="MapRenderer"]
 
-[node name="TestUnit" type="Node3D" parent="MapRenderer"]
+[node name="LeadUnit" type="Node3D" parent="MapRenderer"]
 script = ExtResource("4_unit")
 
-[node name="Visual" type="Node3D" parent="MapRenderer/TestUnit"]
+[node name="Visual" type="Node3D" parent="MapRenderer/LeadUnit"]
 position = Vector3(0, -0.097, 0)
 script = ExtResource("7_worker_visual")
 
-[node name="Model" parent="MapRenderer/TestUnit/Visual" instance=ExtResource("6_worker")]
+[node name="Model" parent="MapRenderer/LeadUnit/Visual" instance=ExtResource("6_worker")]
 scale = Vector3(0.55, 0.55, 0.55)
 
-[node name="SelectionRing" type="MeshInstance3D" parent="MapRenderer/TestUnit"]
+[node name="SelectionRing" type="MeshInstance3D" parent="MapRenderer/LeadUnit"]
 position = Vector3(0, -0.087, 0)
 mesh = SubResource("Ring_unit")
 cast_shadow = 0
 
-[node name="PathPreview" type="MultiMeshInstance3D" parent="MapRenderer/TestUnit"]
+[node name="PathPreview" type="MultiMeshInstance3D" parent="MapRenderer/LeadUnit"]
 cast_shadow = 0
 
 [node name="GameCamera" type="Camera3D" parent="."]
@@ -127,13 +126,6 @@ custom_minimum_size = Vector2(178, 34)
 mouse_default_cursor_shape = 2
 theme_override_font_sizes/font_size = 16
 text = "Новая карта"
-
-[node name="BuildingButton" type="Button" parent="UI/MapControls/Margin/Rows"]
-custom_minimum_size = Vector2(178, 30)
-mouse_default_cursor_shape = 2
-toggle_mode = true
-theme_override_font_sizes/font_size = 14
-text = "Поставить дом"
 
 [node name="SeedLabel" type="Label" parent="UI/MapControls/Margin/Rows"]
 theme_override_colors/font_color = Color(0.82, 0.9, 0.88, 1)

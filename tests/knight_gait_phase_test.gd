@@ -1,10 +1,10 @@
 extends SceneTree
 func _initialize(): call_deferred("run")
 func run() -> void:
-	var units: Array[TestUnit3D] = []
-	var scene := load("res://scenes/worker_unit.tscn") as PackedScene
+	var units: Array[Unit3D] = []
+	var scene := load("res://scenes/units/knight.tscn") as PackedScene
 	for index in 5:
-		var unit := scene.instantiate() as TestUnit3D
+		var unit := scene.instantiate() as Unit3D
 		root.add_child(unit)
 		unit.set_process(false)
 		unit.visual.player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL

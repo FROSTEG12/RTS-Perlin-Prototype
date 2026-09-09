@@ -48,6 +48,7 @@ func _initialize() -> void:
 						expected.y = renderer.WATER_Y
 						assert(interval[1 if h0 < renderer.WATER_Y else 0].distance_to(expected) < 0.00001)
 				checks += 1
+	renderer.trail_wear.free() # Not parented: renderer never entered the scene tree.
 	renderer.free()
 	print("WATERFALL_BOUNDARY PASS: ", checks, " segments; shared density, no phantom coast, exact terrain/water intersection")
 	quit()
