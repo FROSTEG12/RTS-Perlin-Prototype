@@ -29,6 +29,8 @@ var speed_slider: HSlider
 var test_speed := 1.0
 var last_message := "Готов к тренировке"
 var active := false
+var blood: Node3D
+var death_blood_pending := false
 
 func _ready() -> void:
 	rng.randomize()
@@ -48,6 +50,10 @@ func _ready() -> void:
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.modulate = Color(1, 0.55, 0.48)
 	npc.add_child(label)
+	blood = preload("res://scripts/training_blood.gd").new()
+	blood.name = "GroundBlood"
+	blood.world = world
+	add_child(blood)
 	_build_panel()
 
 func _button(text: String, callback: Callable, rows: VBoxContainer) -> Button:
@@ -123,6 +129,8 @@ func reset_arena() -> void:
 	if world.current_cells.is_empty(): return
 	active = true
 	jobs.clear()
+	death_blood_pending = false
+	blood.clear()
 	health = 100
 	dead = false
 	npc_attacking = false
@@ -243,6 +251,7 @@ func _die() -> void:
 	var clip := pick_clip("death", DEATHS)
 	hero.visual.player.speed_scale = test_speed
 	hero.visual.player.play(clip, 0.2)
+	death_blood_pending = true
 	last_message = "Синий погиб: " + clip
 
 func _approach(actor: TestUnit3D, target: TestUnit3D) -> void:
@@ -260,6 +269,12 @@ func _approach(actor: TestUnit3D, target: TestUnit3D) -> void:
 func _process(delta: float) -> void:
 	if not active: return
 	if dead: hero.visual.player.speed_scale = test_speed
+	if dead and death_blood_pending:
+		var player: AnimationPlayer = hero.visual.player
+		var death_clip := player.assigned_animation
+		if death_clip.begins_with("Death_") and player.current_animation_position >= player.get_animation(death_clip).length * 0.85:
+			blood.spawn_death(_body_position(hero))
+			death_blood_pending = false
 	path_timer -= delta
 	npc_cooldown -= delta * test_speed
 	for actor in jobs.keys():
@@ -274,11 +289,13 @@ func _process(delta: float) -> void:
 			job.impacts.pop_front()
 			if actor.global_position.distance_to(job.target.global_position) <= REACH + 0.35:
 				if actor == npc and not dead:
+					blood.spawn_hit(_body_position(hero), hero.global_position - npc.global_position)
 					health = maxi(0, health - 20)
 					if health == 0:
 						_die()
 						break
 				elif actor == hero:
+					blood.spawn_hit(_body_position(npc), npc.global_position - hero.global_position)
 					npc_hits += 1
 		if not jobs.has(actor): continue
 		if job.time >= job.length:
@@ -296,6 +313,10 @@ func _process(delta: float) -> void:
 			elif path_timer <= 0: _approach(npc, hero)
 	if path_timer <= 0: path_timer = 0.5
 	_update_panel()
+
+func _body_position(actor: TestUnit3D) -> Vector3:
+	var skeleton: Skeleton3D = actor.visual.get_node("Model/Knight_Root/Armature/Skeleton3D")
+	return skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone("pelvis")).origin
 
 func _apply_root_motion(actor: TestUnit3D, job: Dictionary) -> void:
 	var curve: Animation = job.motion
