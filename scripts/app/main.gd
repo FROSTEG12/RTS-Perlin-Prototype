@@ -33,6 +33,7 @@ var developer_tools: Control
 var hud: Control
 var pause_menu: Control
 var display_layout: Node
+var fog_of_war: Node3D
 var stockpile := {"Дерево": 0, "Камень": 0, "Металл": 0, "Мясо": 0, "Ягоды": 0, "Уголь": 0}
 var local_team_id := 0
 var player_units: Array[Unit3D] = []
@@ -52,6 +53,10 @@ func _ready() -> void:
 	weather.setup(game_camera, lead_unit, world_seed)
 	_setup_weather_controls()
 	_setup_rts_controls()
+	fog_of_war = preload("res://scripts/world/fog_of_war.gd").new()
+	fog_of_war.name = "FogOfWar"
+	fog_of_war.world = self
+	add_child(fog_of_war)
 	developer_tools = preload("res://scripts/ui/developer_tools.gd").new()
 	developer_tools.name = "DeveloperTools"
 	developer_tools.world = self
@@ -156,6 +161,7 @@ func generate_world() -> void:
 	if rts != null:
 		rts.grid_overlay.refresh()
 	game_camera.focus_on(lead_unit.global_position)
+	if fog_of_war != null: fog_of_war.reset_world()
 
 
 func _setup_weather_controls() -> void:

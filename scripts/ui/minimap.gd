@@ -36,11 +36,18 @@ func rebuild() -> void:
 	terrain = ImageTexture.create_from_image(map)
 	_cache_resource_regions()
 	terrain_material.set_shader_parameter("wear_texture", renderer.trail_wear.texture)
+	bind_fog()
 	terrain_layer.queue_redraw()
 	cached_seed = world.world_seed
 	enemy_contacts.clear()
 	landmarks.clear()
 	queue_redraw()
+
+func bind_fog() -> void:
+	if world.fog_of_war != null and world.fog_of_war.state.texture != null:
+		terrain_material.set_shader_parameter("sight_mask", world.fog_of_war.state.texture)
+		terrain_material.set_shader_parameter("fog_enabled", true)
+		terrain_layer.queue_redraw()
 
 func project(point: Vector3) -> Vector2:
 	var extent: float = world.map_renderer.get_half_extent()
@@ -85,8 +92,10 @@ func unproject(point: Vector2) -> Vector3:
 func diamond() -> PackedVector2Array:
 	return PackedVector2Array([Vector2(size.x * 0.5, 20), Vector2(size.x - 20, size.y * 0.5), Vector2(size.x * 0.5, size.y - 20), Vector2(20, size.y * 0.5)])
 
-func is_contact_visible(team: int, seen_by: Array) -> bool:
-	return team == world.local_team_id or world.local_team_id in seen_by
+func is_contact_visible(team: int, seen_by: Array, point: Vector3 = Vector3.INF) -> bool:
+	if team == world.local_team_id: return true
+	if world.local_team_id not in seen_by: return false
+	return not point.is_finite() or world.fog_of_war == null or world.fog_of_war.state.is_visible(point)
 
 func set_contact(id: int, point: Vector3, team: int, seen_by: Array) -> void:
 	# No omniscient enemy enumeration: future vision owns these reports.
@@ -179,11 +188,12 @@ func _draw() -> void:
 	var symbol_scale := clampf(size.x / 340.0, 0.65, 1.15)
 	for landmark in landmarks.values():
 		if not marker_visible(landmark.position): continue
+		if world.fog_of_war != null and not world.fog_of_war.state.is_explored(landmark.position): continue
 		if landmark.team != -1 and not is_contact_visible(landmark.team, landmark.seen_by): continue
 		var tint: Color = Color("#e4e8e6") if landmark.team == -1 else TEAM_COLORS.get(landmark.team, Color.WHITE)
 		SYMBOLS.draw(self, project(landmark.position), landmark.kind, tint, symbol_scale)
 	for contact in enemy_contacts.values():
-		if not is_contact_visible(contact.team, contact.seen_by) or not marker_visible(contact.position): continue
+		if not is_contact_visible(contact.team, contact.seen_by, contact.position) or not marker_visible(contact.position): continue
 		SYMBOLS.draw(self, project(contact.position), "troop", TEAM_COLORS.get(contact.team, Color.WHITE), symbol_scale)
 	for clipped in camera_footprint():
 		clipped.append(clipped[0])
