@@ -8,9 +8,11 @@ var rain_particles := GPUParticles3D.new()
 var rain_process := ParticleProcessMaterial.new()
 var collision := GPUParticlesCollisionHeightField3D.new()
 var camera: Camera3D
+var unit: Node3D
 
-func setup(view_camera: Camera3D, seed_value: int) -> void:
+func setup(view_camera: Camera3D, player_unit: Node3D, seed_value: int) -> void:
 	camera = view_camera
+	unit = player_unit
 	climate.reset(seed_value)
 	var noise := FastNoiseLite.new()
 	noise.seed = 73519
@@ -84,6 +86,7 @@ func update_visuals(hour: float, key: DirectionalLight3D, environment: Environme
 	var fog_color := Color(0.12, 0.16, 0.24).lerp(Color(0.51, 0.54, 0.58), daylight)
 	fog_material.set_shader_parameter("fog_color", Vector3(fog_color.srgb_to_linear().r, fog_color.srgb_to_linear().g, fog_color.srgb_to_linear().b))
 	fog_material.set_shader_parameter("intensity", climate.fog)
+	fog_material.set_shader_parameter("unit_position", unit.global_position)
 	fog_quad.visible = climate.fog > 0.001
 	rain_material.set_shader_parameter("strength", minf(climate.rain * 2.0, 1.0))
 	rain_material.set_shader_parameter("brightness", lerpf(0.18, 0.75, daylight))
