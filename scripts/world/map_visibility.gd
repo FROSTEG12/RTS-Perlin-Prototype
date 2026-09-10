@@ -1,5 +1,6 @@
 extends Node3D
 const MEMORY_DARKNESS := 0.65
+const RANGE := preload("res://scripts/world/vision_range.gd")
 ## Flat screen-space darkness. No cloud mesh and no toggling trees on discovery.
 var world: Node3D
 var state = preload("res://scripts/world/visibility_mask.gd").new()
@@ -7,6 +8,7 @@ var overlay: MeshInstance3D
 var material: ShaderMaterial
 var objects: Node3D
 var last_sources: Array = []
+var edge_clock := 0.0
 
 func _ready() -> void:
 	material = ShaderMaterial.new()
@@ -37,10 +39,11 @@ func sources() -> Array:
 		groups[key].position += unit.global_position
 		groups[key].count += 1
 	var result: Array = []
-	for group in groups.values(): result.append({"position":group.position/group.count,"radius":12.0,"feather":3.0})
+	for group in groups.values(): result.append({"position":group.position/group.count,"radius":RANGE.radius(world.current_time),"feather":RANGE.FEATHER})
 	return result
 
 func reset_world() -> void:
+	edge_clock = 0.0
 	objects.reset()
 	state.configure(world.map_renderer.get_half_extent())
 	last_sources = sources()
@@ -65,11 +68,13 @@ func can_observe(node: Node3D) -> bool:
 
 func _sync_visuals() -> void:
 	material.set_shader_parameter("mask_blend",state.blend)
+	material.set_shader_parameter("edge_time",edge_clock)
 	if world.hud != null:
 		world.hud.minimap.terrain_material.set_shader_parameter("mask_blend",state.blend)
 
 func _process(delta: float) -> void:
 	if state.texture == null: return
+	edge_clock += delta
 	state.advance(delta)
 	if state.blend >= 1.0 and sources() != last_sources: refresh_sight()
 	objects.refresh()

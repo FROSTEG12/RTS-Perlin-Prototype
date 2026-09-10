@@ -108,15 +108,35 @@ func run() -> void:
 	hidden_unit.visible = true
 	world.player_units.append(hidden_unit)
 	vision.refresh_sight(true)
+	# Stationary squads also lose sight at night, without losing explored ground.
+	var saved_hour: float = world.current_time
+	world._set_time_of_day(12.0)
+	vision.refresh_sight(true)
+	var probe: Vector3 = vision.sources()[0].position+Vector3(9,0,0)
+	assert(vision.sources()[0].radius == 10.0 and vision.state.is_visible(probe))
+	world.game_camera.focus_on(start)
+	world.game_camera.size = 37
+	await capture("visibility-day-range.png")
+	world._set_time_of_day(0.0)
+	vision._process(0.11)
+	assert(vision.last_sources[0].radius == 7.0)
+	assert(not vision.state.is_visible(probe) and vision.state.is_explored(probe))
+	vision._process(0.11)
+	assert(vision.state.blend == 1.0)
+	await capture("visibility-night-range.png")
+	world._set_time_of_day(saved_hour)
+	vision.refresh_sight(true)
 	world.pause_menu.set_open(true)
 	vision.set_process(true)
 	var revision: int = vision.state.revision
 	var blend: float = vision.state.blend
+	var edge_clock: float = vision.edge_clock
 	for frame in 4: await process_frame
 	assert(vision.state.revision == revision and vision.state.blend == blend)
+	assert(vision.edge_clock == edge_clock,"Edge animation pauses with the game")
 	world.pause_menu.set_open(false)
 	world.generate_world()
 	assert(vision.objects.records.is_empty() and not vision.state.is_explored(away))
 	assert(world.hud.minimap.terrain_material.get_shader_parameter("sight_mask") == vision.state.texture)
-	print("MAP_VISIBILITY_PASS smooth_motion unseen_new_building enemy_hide snapshots destruction minimap pause reset")
+	print("MAP_VISIBILITY_PASS smooth_motion unseen_new_building enemy_hide snapshots destruction minimap day_night pause reset")
 	quit()
