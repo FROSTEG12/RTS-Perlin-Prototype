@@ -55,6 +55,7 @@ func bind_visibility() -> void:
 	terrain_material.set_shader_parameter("previous_mask",world.vision.state.previous)
 	terrain_material.set_shader_parameter("mask_blend",world.vision.state.blend)
 	terrain_material.set_shader_parameter("visibility_enabled",true)
+	terrain_material.set_shader_parameter("memory_darkness",world.vision.MEMORY_DARKNESS)
 
 func _cache_resource_regions() -> void:
 	# One sign per nearby resource area, not a sea of overlapping deposit icons.

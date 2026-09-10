@@ -1,4 +1,5 @@
 extends Node3D
+const MEMORY_DARKNESS := 0.65
 ## Flat screen-space darkness. No cloud mesh and no toggling trees on discovery.
 var world: Node3D
 var state = preload("res://scripts/world/visibility_mask.gd").new()
@@ -11,6 +12,7 @@ func _ready() -> void:
 	material = ShaderMaterial.new()
 	material.shader = preload("res://shaders/map_visibility.gdshader")
 	material.render_priority = 127
+	material.set_shader_parameter("memory_darkness",MEMORY_DARKNESS)
 	overlay = MeshInstance3D.new()
 	overlay.name = "MapDarkness"
 	var quad := QuadMesh.new()

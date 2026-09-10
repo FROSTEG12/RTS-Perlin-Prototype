@@ -5,13 +5,15 @@ uniform sampler2D sight_mask : filter_linear, repeat_disable;
 uniform sampler2D previous_mask : filter_linear, repeat_disable;
 uniform float mask_blend = 1.0;
 uniform bool visibility_enabled = false;
+uniform float memory_darkness = 0.65;
 void fragment() {
 	vec4 ground = texture(TEXTURE, UV);
 	float wear = smoothstep(0.12, 0.85, texture(wear_texture, UV).r);
 	vec3 terrain = mix(ground.rgb, vec3(0.53,0.44,0.30),wear*0.60);
 	if (visibility_enabled) {
 		vec2 sight = mix(texture(previous_mask,UV).rg,texture(sight_mask,UV).rg,mask_blend);
-		terrain = mix(vec3(0.025,0.04,0.055),terrain*mix(0.74,1.0,sight.r),sight.g);
+		float darkness = mix(1.0,memory_darkness*(1.0-sight.r),sight.g);
+		terrain = mix(terrain,vec3(0.025,0.04,0.055),darkness);
 	}
 	COLOR = vec4(terrain,ground.a);
 }
