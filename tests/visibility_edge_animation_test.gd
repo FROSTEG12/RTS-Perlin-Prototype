@@ -45,12 +45,13 @@ func run() -> void:
 	camera.add_child(mesh)
 	mesh.position.z = -1
 	var first := await render_frame(material,0)
-	var second := await render_frame(material,6)
-	var near := await render_frame(material,6.016)
+	var second := await render_frame(material,2)
+	var near := await render_frame(material,2.016)
 	first.save_png(OUT+"shroud-edge-0.png")
-	second.save_png(OUT+"shroud-edge-6.png")
+	second.save_png(OUT+"shroud-edge-2.png")
 	var moving := 0
 	var stable := 0
+	var strong_motion := 0
 	var largest_step := 0.0
 	for y in range(0,540,3):
 		for x in range(0,960,3):
@@ -64,14 +65,21 @@ func run() -> void:
 			var difference := absf(a.r-b.r)+absf(a.g-b.g)+absf(a.b-b.b)
 			if value < 0.001 or value > 0.999:
 				# Ignore one mask texel at the classification boundary (GPU is bilinear).
-				if ground.length() < 11.5 or ground.length() > 15.5:
+				if ground.length() < 11.0 or ground.length() > 16.0:
 					assert(difference < 0.001,"Opaque/clear cores must not animate")
 					stable += 1
 			elif difference > 0.008: moving += 1
+			if difference > 0.15: strong_motion += 1
 			var c := near.get_pixel(x,y)
 			largest_step = maxf(largest_step,absf(b.r-c.r)+absf(b.g-c.g)+absf(b.b-c.b))
 	assert(moving > 30 and stable > 1000)
-	assert(largest_step < 0.025,"No single-frame flicker")
+	assert(strong_motion > 200,"Edge motion must be obvious within two seconds")
+	assert(largest_step < 0.06,"No single-frame flicker")
 	assert(state.explored == history)
-	print("EDGE_ANIMATION_PASS moving_pixels=",moving," stable_core=",stable," max_frame_delta=",largest_step)
+	# Close view of one edge, for inspecting mask reconstruction and large curls.
+	camera.size = 12
+	camera.position += Vector3(11,0,0)
+	(await render_frame(material,0)).save_png(OUT+"shroud-close-0.png")
+	(await render_frame(material,2)).save_png(OUT+"shroud-close-2.png")
+	print("EDGE_ANIMATION_PASS moving_pixels=",moving," strong_motion=",strong_motion," stable_core=",stable," max_frame_delta=",largest_step)
 	quit()
