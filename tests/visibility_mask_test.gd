@@ -1,0 +1,23 @@
+extends SceneTree
+func _initialize() -> void:
+	var mask = preload("res://scripts/world/visibility_mask.gd").new()
+	mask.configure(52)
+	mask.update([{"position":Vector3.ZERO}],true)
+	assert(mask.is_visible(Vector3.ZERO) and not mask.is_explored(Vector3(30,0,0)))
+	var history: PackedByteArray = mask.explored.duplicate()
+	mask.update([{"position":Vector3(30,0,0)}])
+	assert(mask.is_explored(Vector3.ZERO) and not mask.is_visible(Vector3.ZERO))
+	assert(mask.blend == 0)
+	for frame in 6:
+		mask.advance(1.0/60.0)
+		assert(is_equal_approx(mask.blend,minf((frame+1)/6.0,1.0)))
+	for i in history.size(): assert(mask.explored[i] >= history[i])
+	mask.update([])
+	assert(not mask.is_visible(Vector3(30,0,0)) and mask.is_explored(Vector3(30,0,0)))
+	mask.update([{"position":Vector3(-48,0,48)},{"position":Vector3(48,0,-48)}])
+	assert(mask.is_visible(Vector3(-48,0,48)) and mask.is_visible(Vector3(48,0,-48)))
+	assert(not mask.is_explored(Vector3.INF))
+	mask.configure(52)
+	assert(not mask.is_explored(Vector3.ZERO))
+	print("VISIBILITY_MASK_PASS states memory smoothing multiple_sources reset")
+	quit()

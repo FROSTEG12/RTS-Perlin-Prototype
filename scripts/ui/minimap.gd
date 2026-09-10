@@ -36,6 +36,7 @@ func rebuild() -> void:
 	terrain = ImageTexture.create_from_image(map)
 	_cache_resource_regions()
 	terrain_material.set_shader_parameter("wear_texture", renderer.trail_wear.texture)
+	bind_visibility()
 	terrain_layer.queue_redraw()
 	cached_seed = world.world_seed
 	enemy_contacts.clear()
@@ -47,6 +48,13 @@ func project(point: Vector3) -> Vector2:
 	var normalized := Vector2(point.x, point.z) / (extent * 2.0)
 	var inner := size - Vector2(40, 40)
 	return size * 0.5 + Vector2((normalized.x - normalized.y) * inner.x * 0.5, (normalized.x + normalized.y) * inner.y * 0.5)
+
+func bind_visibility() -> void:
+	if world.vision == null or world.vision.state.texture == null: return
+	terrain_material.set_shader_parameter("sight_mask",world.vision.state.texture)
+	terrain_material.set_shader_parameter("previous_mask",world.vision.state.previous)
+	terrain_material.set_shader_parameter("mask_blend",world.vision.state.blend)
+	terrain_material.set_shader_parameter("visibility_enabled",true)
 
 func _cache_resource_regions() -> void:
 	# One sign per nearby resource area, not a sea of overlapping deposit icons.
@@ -85,8 +93,10 @@ func unproject(point: Vector2) -> Vector3:
 func diamond() -> PackedVector2Array:
 	return PackedVector2Array([Vector2(size.x * 0.5, 20), Vector2(size.x - 20, size.y * 0.5), Vector2(size.x * 0.5, size.y - 20), Vector2(20, size.y * 0.5)])
 
-func is_contact_visible(team: int, seen_by: Array) -> bool:
-	return team == world.local_team_id or world.local_team_id in seen_by
+func is_contact_visible(team: int, seen_by: Array, point: Vector3 = Vector3.INF) -> bool:
+	if team == world.local_team_id: return true
+	if world.local_team_id not in seen_by: return false
+	return not point.is_finite() or world.vision == null or world.vision.state.is_visible(point)
 
 func set_contact(id: int, point: Vector3, team: int, seen_by: Array) -> void:
 	# No omniscient enemy enumeration: future vision owns these reports.
@@ -95,10 +105,27 @@ func set_contact(id: int, point: Vector3, team: int, seen_by: Array) -> void:
 func set_landmark(id: int, point: Vector3, kind: String, team: int = -1, seen_by: Array = []) -> void:
 	# Registration hook for real structures/vision. Never invent map buildings.
 	if kind not in ["building", "watchtower"]: return
-	landmarks[id] = {"position": point, "kind": kind, "team": team, "seen_by": seen_by.duplicate()}
+	var remembered: Dictionary = landmarks.get(id,{}).get("remembered",{})
+	landmarks[id] = {"position": point, "kind": kind, "team": team, "seen_by": seen_by.duplicate(),"remembered":remembered,"removed":false}
+	refresh_landmarks()
 
 func remove_landmark(id: int) -> void:
-	landmarks.erase(id)
+	if not landmarks.has(id): return
+	landmarks[id].removed = true
+	refresh_landmarks()
+
+func refresh_landmarks() -> void:
+	for id in landmarks.keys():
+		var item: Dictionary = landmarks[id]
+		if item.removed:
+			if item.remembered.is_empty() or world.vision == null or world.vision.state.is_visible(item.remembered.position): landmarks.erase(id)
+			continue
+		var reported: bool = item.team == -1 or item.team == world.local_team_id or world.local_team_id in item.seen_by
+		if reported and (world.vision == null or world.vision.state.is_visible(item.position)):
+			item.remembered = {"position":item.position,"kind":item.kind,"team":item.team}
+
+func visible_landmarks() -> Array:
+	return landmarks.values().map(func(item): return item.remembered).filter(func(item): return not item.is_empty())
 
 func marker_visible(point: Vector3) -> bool:
 	if not point.is_finite(): return false
@@ -177,13 +204,12 @@ func _draw() -> void:
 		draw_circle(text_point, 10, Color("#0b131bf5"), true, -1, true)
 		draw_string(font, text_point + Vector2(-5,4), labels[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#ecf0f2"))
 	var symbol_scale := clampf(size.x / 340.0, 0.65, 1.15)
-	for landmark in landmarks.values():
+	for landmark in visible_landmarks():
 		if not marker_visible(landmark.position): continue
-		if landmark.team != -1 and not is_contact_visible(landmark.team, landmark.seen_by): continue
 		var tint: Color = Color("#e4e8e6") if landmark.team == -1 else TEAM_COLORS.get(landmark.team, Color.WHITE)
 		SYMBOLS.draw(self, project(landmark.position), landmark.kind, tint, symbol_scale)
 	for contact in enemy_contacts.values():
-		if not is_contact_visible(contact.team, contact.seen_by) or not marker_visible(contact.position): continue
+		if not is_contact_visible(contact.team, contact.seen_by,contact.position) or not marker_visible(contact.position): continue
 		SYMBOLS.draw(self, project(contact.position), "troop", TEAM_COLORS.get(contact.team, Color.WHITE), symbol_scale)
 	for clipped in camera_footprint():
 		clipped.append(clipped[0])

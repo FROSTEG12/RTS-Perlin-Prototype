@@ -33,6 +33,7 @@ var developer_tools: Control
 var hud: Control
 var pause_menu: Control
 var display_layout: Node
+var vision: Node3D
 var stockpile := {"Дерево": 0, "Камень": 0, "Металл": 0, "Мясо": 0, "Ягоды": 0, "Уголь": 0}
 var local_team_id := 0
 var player_units: Array[Unit3D] = []
@@ -49,9 +50,13 @@ func _ready() -> void:
 	weather = preload("res://scripts/environment/weather_effects.gd").new()
 	weather.name = "Weather"
 	add_child(weather)
-	weather.setup(game_camera, lead_unit, world_seed)
+	weather.setup(game_camera, world_seed)
 	_setup_weather_controls()
 	_setup_rts_controls()
+	vision = preload("res://scripts/world/map_visibility.gd").new()
+	vision.name = "MapVisibility"
+	vision.world = self
+	add_child(vision)
 	developer_tools = preload("res://scripts/ui/developer_tools.gd").new()
 	developer_tools.name = "DeveloperTools"
 	developer_tools.world = self
@@ -156,6 +161,7 @@ func generate_world() -> void:
 	if rts != null:
 		rts.grid_overlay.refresh()
 	game_camera.focus_on(lead_unit.global_position)
+	if vision != null: vision.reset_world()
 
 
 func _setup_weather_controls() -> void:

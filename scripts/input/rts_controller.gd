@@ -83,10 +83,11 @@ func _ready() -> void:
 
 
 func units() -> Array:
-	return get_tree().get_nodes_in_group("rts_units")
+	return get_tree().get_nodes_in_group("rts_units").filter(func(unit): return world.vision == null or world.vision.can_observe(unit))
 
 
 func set_selection(next: Array) -> void:
+	if world.vision != null: next = next.filter(func(unit): return is_instance_valid(unit) and world.vision.can_observe(unit))
 	var expanded := CONTROL_GROUPS.expand(next, units())
 	for unit in selected:
 		if is_instance_valid(unit):
@@ -272,8 +273,9 @@ func _process(delta: float) -> void:
 	queue_redraw()
 	var surviving: Array[Unit3D] = []
 	for unit in selected:
-		if is_instance_valid(unit):
-			surviving.append(unit)
+		if not is_instance_valid(unit): continue
+		if world.vision != null and not world.vision.can_observe(unit): unit.set_selected(false)
+		else: surviving.append(unit)
 	if surviving.size() != selected.size():
 		selected = surviving
 		_update_status()
@@ -313,6 +315,7 @@ func _draw() -> void:
 	# One representative actual path, not a misleading line across water.
 	for unit in selected:
 		if not is_instance_valid(unit) or unit.target_positions.is_empty(): continue
+		if world.vision != null and not world.vision.can_observe(unit): continue
 		var points := PackedVector2Array([world.game_camera.unproject_position(unit.global_position)])
 		for target in unit.target_positions:
 			points.append(world.game_camera.unproject_position(unit.get_parent().to_global(target)))
