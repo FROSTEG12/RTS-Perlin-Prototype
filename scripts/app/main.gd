@@ -50,7 +50,7 @@ func _ready() -> void:
 	weather = preload("res://scripts/environment/weather_effects.gd").new()
 	weather.name = "Weather"
 	add_child(weather)
-	weather.setup(game_camera, lead_unit, world_seed)
+	weather.setup(game_camera, world_seed)
 	_setup_weather_controls()
 	_setup_rts_controls()
 	fog_of_war = preload("res://scripts/world/fog_of_war.gd").new()

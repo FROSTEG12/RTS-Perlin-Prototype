@@ -104,7 +104,18 @@ func set_contact(id: int, point: Vector3, team: int, seen_by: Array) -> void:
 func set_landmark(id: int, point: Vector3, kind: String, team: int = -1, seen_by: Array = []) -> void:
 	# Registration hook for real structures/vision. Never invent map buildings.
 	if kind not in ["building", "watchtower"]: return
-	landmarks[id] = {"position": point, "kind": kind, "team": team, "seen_by": seen_by.duplicate()}
+	var discovered: bool = landmarks.get(id, {}).get("discovered", false) and landmarks[id].position == point
+	landmarks[id] = {"position": point, "kind": kind, "team": team, "seen_by": seen_by.duplicate(), "discovered": discovered}
+	is_landmark_visible(id)
+
+func is_landmark_visible(id: int) -> bool:
+	if not landmarks.has(id): return false
+	var landmark: Dictionary = landmarks[id]
+	if not marker_visible(landmark.position): return false
+	var reported: bool = landmark.team == -1 or landmark.team == world.local_team_id or world.local_team_id in landmark.seen_by
+	if reported and (world.fog_of_war == null or world.fog_of_war.state.is_visible(landmark.position)):
+		landmark.discovered = true
+	return landmark.discovered
 
 func remove_landmark(id: int) -> void:
 	landmarks.erase(id)
@@ -186,10 +197,9 @@ func _draw() -> void:
 		draw_circle(text_point, 10, Color("#0b131bf5"), true, -1, true)
 		draw_string(font, text_point + Vector2(-5,4), labels[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#ecf0f2"))
 	var symbol_scale := clampf(size.x / 340.0, 0.65, 1.15)
-	for landmark in landmarks.values():
-		if not marker_visible(landmark.position): continue
-		if world.fog_of_war != null and not world.fog_of_war.state.is_explored(landmark.position): continue
-		if landmark.team != -1 and not is_contact_visible(landmark.team, landmark.seen_by): continue
+	for id in landmarks:
+		if not is_landmark_visible(id): continue
+		var landmark: Dictionary = landmarks[id]
 		var tint: Color = Color("#e4e8e6") if landmark.team == -1 else TEAM_COLORS.get(landmark.team, Color.WHITE)
 		SYMBOLS.draw(self, project(landmark.position), landmark.kind, tint, symbol_scale)
 	for contact in enemy_contacts.values():

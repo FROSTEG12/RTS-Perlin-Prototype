@@ -12,6 +12,8 @@ func run() -> void:
 	world.game_camera.set_process(false)
 	for unit in world.player_units: unit.set_process(false)
 	var fog = world.fog_of_war
+	assert(not world.weather.fog_material.shader.code.contains("unit_position"))
+	assert(not world.weather.fog_material.shader.code.contains("vision_radius"))
 	assert(fog.sources().size() == 1)
 	var start: Vector3 = fog.sources()[0].position
 	assert(fog.state.is_visible(start))
@@ -39,6 +41,8 @@ func run() -> void:
 	world.add_child(tall)
 	tall.position = away
 	tall.add_to_group("fog_static")
+	world.hud.minimap.set_landmark(901, away, "building", 1, [0])
+	assert(not world.hud.minimap.is_landmark_visible(901))
 	var enemy := Node3D.new()
 	world.add_child(enemy)
 	enemy.position = away
@@ -55,6 +59,12 @@ func run() -> void:
 	world.game_camera.size = 30
 	world.game_camera.focus_on(start)
 	await capture("fog-start.png")
+	var prior_weather_fog: float = world.weather.climate.fog
+	world.weather.climate.fog = 0.85
+	world._apply_day_night_lighting()
+	await capture("fog-weather-no-unit-hole.png")
+	world.weather.climate.fog = prior_weather_fog
+	world._apply_day_night_lighting()
 	var original: Array[Vector3] = []
 	for unit in world.player_units:
 		original.append(unit.global_position)
@@ -62,6 +72,7 @@ func run() -> void:
 	fog.update_sight()
 	assert(fog.state.is_explored(start) and not fog.state.is_visible(start))
 	assert(tall.visible and enemy.visible)
+	assert(world.hud.minimap.is_landmark_visible(901))
 	assert(world.hud.minimap.is_contact_visible(1,[0],away))
 	world.game_camera.focus_on((start + away) * 0.5)
 	world.game_camera.size = 42
@@ -70,6 +81,31 @@ func run() -> void:
 	fog.update_sight()
 	assert(tall.visible and not enemy.visible)
 	assert(not world.hud.minimap.is_contact_visible(1,[0],away))
+	assert(world.hud.minimap.is_landmark_visible(901))
+	# A newly built object in remembered terrain was never personally discovered.
+	world.hud.minimap.set_landmark(901, away, "building", 1, [])
+	assert(world.hud.minimap.is_landmark_visible(901))
+	var unseen_building := Node3D.new()
+	world.add_child(unseen_building)
+	unseen_building.position = away
+	unseen_building.add_to_group("fog_static")
+	world.hud.minimap.set_landmark(902, away, "building", 1, [0])
+	world.hud.minimap.set_landmark(903, away, "watchtower")
+	fog.update_sight(false)
+	assert(fog.state.is_explored(away) and not unseen_building.visible)
+	assert(not world.hud.minimap.is_landmark_visible(902))
+	assert(not world.hud.minimap.is_landmark_visible(903))
+	for unit in world.player_units: unit.global_position += away - start
+	fog.update_sight()
+	assert(unseen_building.visible and world.hud.minimap.is_landmark_visible(902))
+	assert(world.hud.minimap.is_landmark_visible(903))
+	for i in world.player_units.size(): world.player_units[i].global_position = original[i]
+	fog.update_sight()
+	assert(unseen_building.visible and world.hud.minimap.is_landmark_visible(902))
+	assert(not enemy.visible)
+	unseen_building.free()
+	fog.update_sight(false)
+	assert(fog.discovered_statics.size() == 1)
 	world.pause_menu.set_open(true)
 	var revision: int = fog.state.revision
 	for frame in 5: await process_frame
@@ -80,5 +116,6 @@ func run() -> void:
 	world.generate_world()
 	assert(not fog.state.is_explored(away))
 	assert(fog.state.is_visible(fog.sources()[0].position))
+	assert(fog.discovered_statics.is_empty())
 	print("FOG_WORLD_PASS squad exploration hidden_trees tall_objects enemies minimap memory pause regeneration")
 	quit()

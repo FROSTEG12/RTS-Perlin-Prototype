@@ -10,6 +10,7 @@ var memory: MeshInstance3D
 var batches: Array[Dictionary] = []
 var refresh := 0.0
 var last_sources: Array = []
+var discovered_statics: Dictionary = {}
 
 func _ready() -> void:
 	cloud_material = ShaderMaterial.new()
@@ -46,6 +47,7 @@ func _ready() -> void:
 	memory.position.z = -1.0
 
 func reset_world() -> void:
+	discovered_statics.clear()
 	var extent: float = world.map_renderer.get_half_extent()
 	state.configure(extent)
 	var plane := PlaneMesh.new()
@@ -87,10 +89,17 @@ func update_sight(force: bool = true) -> void:
 		last_sources = active_sources
 		_reveal_resources()
 	# Opt-in hooks for future objects; dynamic objects can move while scouts stand still.
+	for id in discovered_statics.keys():
+		if discovered_statics[id].get_ref() == null: discovered_statics.erase(id)
 	for node in get_tree().get_nodes_in_group("fog_static"):
-		if node is Node3D: node.visible = state.is_explored(node.global_position)
+		if not node is Node3D: continue
+		# Remember the object, not just its ground tile: new unseen buildings stay hidden.
+		if state.is_visible(node.global_position): discovered_statics[node.get_instance_id()] = weakref(node)
+		node.visible = discovered_statics.has(node.get_instance_id())
 	for node in get_tree().get_nodes_in_group("fog_dynamic"):
 		if node is Node3D: node.visible = state.is_visible(node.global_position)
+	if world.hud != null:
+		for id in world.hud.minimap.landmarks: world.hud.minimap.is_landmark_visible(id)
 
 func _reveal_resources() -> void:
 	# Tall trees and their shadow batches must not protrude through unknown fog.
