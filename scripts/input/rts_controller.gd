@@ -1,10 +1,13 @@
 extends Control
 ## Screen-space selection, with a world-space command interface beneath it.
 const DRAG_THRESHOLD := 7.0
+const CONTROL_GROUPS := preload("res://scripts/units/unit_control_groups.gd")
+const SQUAD_BADGE := preload("res://assets/ui/army_emblems/infantry.png")
 var world: Node3D
 var orders: Node
 var selected: Array[Unit3D] = []
 var hovered: Unit3D
+var hovered_members: Array[Unit3D] = []
 var selecting := false
 var drag_start := Vector2.ZERO
 var drag_end := Vector2.ZERO
@@ -18,9 +21,12 @@ var stop_button: Button
 var focus_button: Button
 var grid_button: CheckButton
 var grid_overlay: MeshInstance3D
+var command_panel: PanelContainer
 
 
 func _ready() -> void:
+	# UI artwork must not inherit the world's nearest/pixel-art sampling.
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	orders = preload("res://scripts/input/rts_orders.gd").new()
@@ -31,6 +37,7 @@ func _ready() -> void:
 	grid_overlay.world = world
 	world.map_renderer.add_child(grid_overlay)
 	var panel := PanelContainer.new()
+	command_panel = panel
 	panel.name = "UnitCommands"
 	add_child(panel)
 	panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
@@ -80,15 +87,24 @@ func units() -> Array:
 
 
 func set_selection(next: Array) -> void:
+	var expanded := CONTROL_GROUPS.expand(next, units())
 	for unit in selected:
 		if is_instance_valid(unit):
 			unit.set_selected(false)
 	selected.clear()
-	for unit in next:
+	for unit in expanded:
 		if is_instance_valid(unit) and unit not in selected:
 			selected.append(unit)
 			unit.set_selected(true)
 	_update_status()
+
+func select_unit(unit: Unit3D, additive: bool = false) -> void:
+	var next: Array = selected.duplicate() if additive else []
+	if additive and unit in next:
+		for member in CONTROL_GROUPS.members(unit, units()): next.erase(member)
+	else:
+		next.append(unit)
+	set_selection(next)
 
 
 func reset() -> void:
@@ -117,7 +133,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if world.is_generating:
+	if world.is_generating or world.developer_tools.visible:
 		return
 	if event is InputEventMouseButton and over_ui(event.position):
 		if event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
@@ -171,13 +187,32 @@ func unit_screen_rect(unit: Unit3D) -> Rect2:
 
 
 func over_ui(point: Vector2) -> bool:
-	for panel in [world.get_node("UI/MapControls"), get_node("UnitCommands")]:
-		if panel.is_visible_in_tree() and panel.get_global_rect().has_point(point):
-			return true
-	return false
+	return (world.developer_tools != null and world.developer_tools.contains(point)) or (world.hud != null and world.hud.contains(point)) or (world.pause_menu != null and world.pause_menu.visible)
 
+
+func badge_rect(unit: Unit3D) -> Rect2:
+	var anchor: Vector2 = world.game_camera.unproject_position(squad_center(unit) + Vector3.UP * 1.7)
+	return Rect2(anchor - Vector2(22, 42), Vector2(44, 48))
+
+func squad_center(unit: Unit3D) -> Vector3:
+	var group := CONTROL_GROUPS.members(unit, units())
+	var center := Vector3.ZERO
+	for member in group: center += member.global_position
+	return center / group.size() if not group.is_empty() else unit.global_position
+
+func squad_leaders() -> Array[Unit3D]:
+	var leaders: Array[Unit3D] = []
+	var seen := {}
+	for unit: Unit3D in units():
+		if unit.individual_control or unit.squad_id <= 0 or seen.has(unit.squad_id): continue
+		seen[unit.squad_id] = true
+		leaders.append(unit)
+	return leaders
 
 func hit_unit(point: Vector2) -> Unit3D:
+	for leader in squad_leaders():
+		if leader.is_visible_in_tree() and not world.game_camera.is_position_behind(leader.global_position) and badge_rect(leader).has_point(point):
+			return leader
 	var result: Unit3D
 	var nearest := INF
 	for unit: Unit3D in units():
@@ -198,7 +233,7 @@ func _finish_selection() -> void:
 		var unit := hit_unit(drag_end)
 		if unit != null:
 			if additive and unit in next:
-				next.erase(unit)
+				for member in CONTROL_GROUPS.members(unit, units()): next.erase(member)
 			else:
 				next.append(unit)
 	else:
@@ -226,14 +261,15 @@ func focus_selected() -> void:
 
 
 func _set_hover(unit: Unit3D) -> void:
-	if is_instance_valid(hovered):
-		hovered.set_hovered(false)
+	for member in hovered_members:
+		if is_instance_valid(member): member.set_hovered(false)
 	hovered = unit
-	if hovered != null:
-		hovered.set_hovered(true)
+	hovered_members = CONTROL_GROUPS.members(unit, units())
+	for member in hovered_members: member.set_hovered(true)
 
 
 func _process(delta: float) -> void:
+	queue_redraw()
 	var surviving: Array[Unit3D] = []
 	for unit in selected:
 		if is_instance_valid(unit):
@@ -256,7 +292,8 @@ func _process(delta: float) -> void:
 func _feedback(ok: bool, point: Vector3, message: String) -> void:
 	feedback_point = point
 	feedback_ok = ok
-	feedback_timer = 1.0
+	# Each soldier reports path acceptance: don't flash a destination ring per job.
+	feedback_timer = 0.0 if ok else 1.0
 	status.text = message
 	queue_redraw()
 
@@ -264,7 +301,7 @@ func _feedback(ok: bool, point: Vector3, message: String) -> void:
 func _update_status() -> void:
 	if status == null:
 		return
-	status.text = "Выделено: %d" % selected.size() if not selected.is_empty() else "Выбери юнита левой кнопкой"
+	status.text = "Выделено бойцов: %d" % selected.size() if not selected.is_empty() else "Выбери отряд левой кнопкой"
 	if selected.size() == 1:
 		status.text = selected[0].display_name
 	stop_button.disabled = selected.is_empty()
@@ -272,14 +309,37 @@ func _update_status() -> void:
 
 
 func _draw() -> void:
+	if world == null: return
+	# One representative actual path, not a misleading line across water.
+	for unit in selected:
+		if not is_instance_valid(unit) or unit.target_positions.is_empty(): continue
+		var points := PackedVector2Array([world.game_camera.unproject_position(unit.global_position)])
+		for target in unit.target_positions:
+			points.append(world.game_camera.unproject_position(unit.get_parent().to_global(target)))
+		if points.size() > 1:
+			draw_polyline(points, Color(0.55, 0.8, 0.95, 0.65), 1.5, true)
+			draw_arc(points[points.size() - 1], 7, 0, TAU, 24, Color(0.8, 0.9, 1), 2, true)
+		break
+	# Shared screen-space geometry for drawing and clicking each squad standard.
+	for leader in squad_leaders():
+		if not leader.is_visible_in_tree() or world.game_camera.is_position_behind(leader.global_position): continue
+		var rect := badge_rect(leader)
+		var active := leader in selected
+		var lit := active or leader in hovered_members
+		var p := rect.position
+		var polygon := PackedVector2Array([p + Vector2(22, 0), p + Vector2(43, 10), p + Vector2(43, 36), p + Vector2(22, 48), p + Vector2(1, 36), p + Vector2(1, 10)])
+		draw_colored_polygon(polygon, Color("#285ca0") if lit else Color("#204a83"))
+		var outline := polygon.duplicate()
+		outline.append(polygon[0])
+		draw_polyline(outline, Color.WHITE, 2.5 if active else 1.5, true)
+		draw_texture_rect(SQUAD_BADGE, Rect2(p + Vector2(4, 3), Vector2(36, 42)), false)
 	if selecting and drag_start.distance_to(drag_end) >= DRAG_THRESHOLD:
 		var rect := Rect2(drag_start, drag_end - drag_start).abs()
 		draw_rect(rect, Color(0.65, 0.85, 0.55, 0.13), true)
 		draw_rect(rect, Color(0.75, 0.95, 0.60, 0.9), false, 1.5)
-	if feedback_timer > 0.0 and world != null:
+	if feedback_timer > 0.0 and not feedback_ok and world != null:
 		var point: Vector2 = world.game_camera.unproject_position(feedback_point)
-		var color := Color(0.85, 0.95, 0.4, feedback_timer) if feedback_ok else Color(1.0, 0.3, 0.2, feedback_timer)
-		draw_arc(point, 9.0 + feedback_timer * 6.0, 0.0, TAU, 24, color, 2.0, true)
+		var color := Color(1.0, 0.3, 0.2, feedback_timer)
 		if not feedback_ok:
 			draw_line(point - Vector2(5, 5), point + Vector2(5, 5), color, 2)
 			draw_line(point - Vector2(5, -5), point + Vector2(5, -5), color, 2)

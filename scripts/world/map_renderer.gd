@@ -23,6 +23,7 @@ const RESOURCE_COLORS := {
 	"stone": Color("d2d5cc"),
 	"iron": Color("d96b45"),
 	"food": Color("ff78b4"),
+	"coal": Color("343b46"),
 }
 
 var cells := PackedByteArray()

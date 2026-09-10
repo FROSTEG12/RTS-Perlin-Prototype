@@ -12,6 +12,7 @@ const RESOURCE_RULES: Array[Dictionary] = [
 	{"kind": "iron", "base_count": 7, "spacing": 7.0, "field_scale": 15.0, "salt": 7919},
 	{"kind": "stone", "base_count": 13, "spacing": 5.0, "field_scale": 12.0, "salt": 5051},
 	{"kind": "food", "base_count": 18, "spacing": 4.0, "field_scale": 10.0, "salt": 3253},
+	{"kind": "coal", "base_count": 7, "spacing": 7.0, "field_scale": 15.0, "salt": 9283},
 ]
 
 

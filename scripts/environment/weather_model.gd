@@ -108,11 +108,18 @@ func advance(seconds: float, game_hours: float, hour: float) -> void:
 		target_fog = fog_override
 	fog = lerpf(fog, target_fog, 1.0 - exp(-maxf(seconds, 0.0) / 7.0))
 
-func description() -> String:
+func condition() -> StringName:
 	if rain > 0.12:
-		return "Дождь · %d%%" % roundi(rain * 100.0)
+		return &"rain"
 	if fog > 0.18:
-		return "Туман · %d%%" % roundi(fog * 100.0)
+		return &"fog"
 	if cloud > 0.25:
-		return "Пасмурно"
+		return &"cloudy"
+	return &"clear"
+
+func description() -> String:
+	match condition():
+		&"rain": return "Дождь · %d%%" % roundi(rain * 100.0)
+		&"fog": return "Туман · %d%%" % roundi(fog * 100.0)
+		&"cloudy": return "Пасмурно"
 	return "Ясно"

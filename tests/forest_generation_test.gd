@@ -9,6 +9,7 @@ func _initialize() -> void:
 		var resources := generator.generate_resources(cells, 104, seed_value, 130)
 		var elapsed := Time.get_ticks_msec() - start
 		var trees := 0
+		var coal: Array[Vector2i] = []
 		var occupied := {}
 		var tiles := {}
 		var interior_land := 0
@@ -21,11 +22,15 @@ func _initialize() -> void:
 			assert(cells[cell.y * 104 + cell.x] == 0)
 			assert(not occupied.has(cell), "Resources must not share a cell")
 			occupied[cell] = true
+			if resource.kind == "coal":
+				for previous in coal: assert(Vector2(previous).distance_to(Vector2(cell)) >= 7.0)
+				coal.append(cell)
 			if resource.kind == "tree":
 				trees += 1
 				var tile := Vector2i(cell.x / 8, cell.y / 8)
 				tiles[tile] = int(tiles.get(tile, 0)) + 1
 		var dense_tiles := 0
+		assert(not coal.is_empty(), "Coal deposits generated on land like iron")
 		for count in tiles.values():
 			if count >= 18:
 				dense_tiles += 1

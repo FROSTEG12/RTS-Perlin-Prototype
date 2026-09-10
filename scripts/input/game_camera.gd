@@ -5,9 +5,13 @@ const MIN_SIZE := 9.0
 const MAX_SIZE := 42.0
 const ZOOM_STEP := 1.10
 const CAMERA_HEIGHT := 18.0
+const EDGE_MARGIN := 20.0
+const EDGE_SPEED := 0.65 # Visible camera heights per second, independent of zoom/FPS.
 
 var dragging := false
 var map_half_extent := 52.0
+var controls_blocked := false
+var window_focused := true
 
 
 func _ready() -> void:
@@ -17,10 +21,29 @@ func _ready() -> void:
 	look_at(Vector3.ZERO, Vector3.UP)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
 		dragging = false
+	if controls_blocked or not window_focused:
+		dragging = false
+	elif not dragging and get_window().has_focus() and not get_tree().paused:
+		# Never scroll behind interactive UI, or after the pointer leaves the window.
+		var hovered := get_viewport().gui_get_hovered_control()
+		if hovered == null or hovered.mouse_filter == Control.MOUSE_FILTER_IGNORE:
+			var direction := edge_direction(get_viewport().get_mouse_position(), get_viewport().get_visible_rect())
+			_move_on_ground(direction * size * EDGE_SPEED * delta)
 	_clamp_position()
+
+
+func edge_direction(point: Vector2, rect: Rect2) -> Vector2:
+	if not rect.has_point(point):
+		return Vector2.ZERO
+	var direction := Vector2.ZERO
+	if point.x < rect.position.x + EDGE_MARGIN: direction.x = -1.0
+	elif point.x >= rect.end.x - EDGE_MARGIN: direction.x = 1.0
+	if point.y < rect.position.y + EDGE_MARGIN: direction.y = 1.0
+	elif point.y >= rect.end.y - EDGE_MARGIN: direction.y = -1.0
+	return direction.normalized()
 
 
 func focus_on(point: Vector3) -> void:
@@ -31,9 +54,14 @@ func focus_on(point: Vector3) -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		dragging = false
+		window_focused = false
+	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
+		window_focused = true
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if controls_blocked or not window_focused or get_tree().paused:
+		return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_MIDDLE:
 			dragging = event.pressed

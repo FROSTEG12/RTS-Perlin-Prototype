@@ -1,0 +1,19 @@
+extends RefCounted
+## User-defined catalogue: six groups, seven entries. No costs or placement logic.
+static func preview(id: String) -> Texture2D:
+	var filename := "fortress_walls_closeup" if id == "fortress_walls" else id
+	var path := "res://assets/ui/buildings/" + filename + ".png"
+	return load(path) if ResourceLoader.exists(path) else null
+
+static func entry(id: String, title: String, description: String = "") -> Dictionary:
+	return {"id": StringName(id), "title": title, "preview": preview(id), "description": description}
+
+static func categories() -> Array:
+	return [
+		{"id": &"settlement", "title": "Управление поселением", "icon": preload("res://assets/ui/navigation/settlement.svg"), "items": [entry("town_hall", "Ратуша", "Ратуша с отдельной башней")]},
+		{"id": &"housing", "title": "Жильё", "icon": preload("res://assets/ui/navigation/housing.svg"), "items": [entry("house", "Жилой дом")]},
+		{"id": &"production", "title": "Производство", "icon": preload("res://assets/ui/resources/build.svg"), "items": [entry("smithy", "Кузница"), entry("sawmill", "Лесопилка")]},
+		{"id": &"storage", "title": "Хранение ресурсов", "icon": preload("res://assets/ui/navigation/storage.svg"), "items": [entry("warehouse", "Склад")]},
+		{"id": &"livestock", "title": "Животноводство", "icon": preload("res://assets/ui/navigation/livestock.svg"), "items": [entry("animal_pen", "Загон для животных")]},
+		{"id": &"fortifications", "title": "Укрепления", "icon": preload("res://assets/ui/navigation/fortifications.svg"), "items": [entry("fortress_walls", "Крепостные стены", "Крепостные стены с воротами и башнями")]},
+	]

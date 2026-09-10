@@ -1,6 +1,7 @@
 extends Node3D
 
-const SQUAD_SIZE := 10
+const FORMATION := preload("res://scripts/units/squad_formation.gd")
+const SQUAD_SIZE := FORMATION.SIZE
 const DEFAULT_MAP_SIZE := 104
 const DEFAULT_SCALE := 34.0
 const DEFAULT_WATER := 40
@@ -17,6 +18,7 @@ const DAY_NIGHT_LIGHTING := preload("res://scripts/environment/day_night_lightin
 @onready var seed_label: Label = $UI/MapControls/Margin/Rows/SeedLabel
 @onready var time_label: Label = $UI/MapControls/Margin/Rows/TimeLabel
 @onready var time_slider: HSlider = $UI/MapControls/Margin/Rows/TimeSlider
+@onready var world_controls: PanelContainer = $UI/MapControls
 
 var world_seed: int
 var current_cells := PackedByteArray()
@@ -27,13 +29,22 @@ var current_day := 1
 var simulation_speed := 1.0
 var weather: Node3D
 var rts: Control
+var developer_tools: Control
+var hud: Control
+var pause_menu: Control
+var display_layout: Node
+var stockpile := {"Дерево": 0, "Камень": 0, "Металл": 0, "Мясо": 0, "Ягоды": 0, "Уголь": 0}
+var local_team_id := 0
 var player_units: Array[Unit3D] = []
 
 
 func _ready() -> void:
-	$UI/MapControls/Margin/Rows/ColorGradeToggle.toggled.connect(_on_color_grade_toggled)
-	$UI/MapControls/Margin/Rows/ColorGradeStrength.value_changed.connect(_on_color_grade_strength)
-	_on_color_grade_strength($UI/MapControls/Margin/Rows/ColorGradeStrength.value)
+	display_layout = preload("res://scripts/ui/display_layout.gd").new()
+	display_layout.name = "DisplayLayout"
+	add_child(display_layout)
+	world_controls.get_node("Margin/Rows/ColorGradeToggle").toggled.connect(_on_color_grade_toggled)
+	world_controls.get_node("Margin/Rows/ColorGradeStrength").value_changed.connect(_on_color_grade_strength)
+	_on_color_grade_strength(world_controls.get_node("Margin/Rows/ColorGradeStrength").value)
 	world_seed = int(Time.get_unix_time_from_system()) % 2_000_000_000
 	weather = preload("res://scripts/environment/weather_effects.gd").new()
 	weather.name = "Weather"
@@ -41,11 +52,23 @@ func _ready() -> void:
 	weather.setup(game_camera, lead_unit, world_seed)
 	_setup_weather_controls()
 	_setup_rts_controls()
+	developer_tools = preload("res://scripts/ui/developer_tools.gd").new()
+	developer_tools.name = "DeveloperTools"
+	developer_tools.world = self
+	$UI.add_child(developer_tools)
 	time_slider.value_changed.connect(_on_time_slider_changed)
 	_set_time_of_day(current_time)
 	new_map_button.pressed.connect(_on_new_map_pressed)
 	generate_world()
 	_sync_weather_controls()
+	hud = preload("res://scripts/ui/game_hud.gd").new()
+	hud.world = self
+	$UI.add_child(hud)
+	# Utility menu above HUD; modal pause menu above both.
+	$UI.move_child(developer_tools, -1)
+	pause_menu = preload("res://scripts/ui/pause_menu.gd").new()
+	pause_menu.world = self
+	$UI.add_child(pause_menu)
 	print("WORLD_READY units=", player_units.size())
 
 
@@ -61,12 +84,12 @@ func _process(delta: float) -> void:
 
 
 func _on_color_grade_toggled(_enabled: bool) -> void:
-	_on_color_grade_strength($UI/MapControls/Margin/Rows/ColorGradeStrength.value)
+	_on_color_grade_strength(world_controls.get_node("Margin/Rows/ColorGradeStrength").value)
 
 
 func _on_color_grade_strength(amount: float) -> void:
 	var effect = world_environment.compositor.compositor_effects[0]
-	effect.enabled = $UI/MapControls/Margin/Rows/ColorGradeToggle.button_pressed and amount > 0.0
+	effect.enabled = world_controls.get_node("Margin/Rows/ColorGradeToggle").button_pressed and amount > 0.0
 	# Hue and tint are OKHSL controls supplied by Rytelier's effect.
 	effect.shadows = Vector4(0.65, 0.055 * amount, lerpf(1.0, 1.18, amount), lerpf(1.0, 0.84, amount))
 	effect.midtones = Vector4(0.30, 0.025 * amount, lerpf(1.0, 1.65, amount), lerpf(1.0, 1.12, amount))
@@ -118,32 +141,13 @@ func generate_world() -> void:
 	))
 	game_camera.configure_map(map_renderer.get_half_extent())
 	var spawn_cell := generator.find_mainland_spawn(current_cells, DEFAULT_MAP_SIZE)
-	var used := {}
-	for unit in player_units:
-		var chosen := spawn_cell
-		var found := false
-		for radius in range(DEFAULT_MAP_SIZE):
-			if found:
-				break
-			for y in range(-radius, radius + 1):
-				if found:
-					break
-				for x in range(-radius, radius + 1):
-					if maxi(absi(x), absi(y)) != radius:
-						continue
-					var candidate := spawn_cell + Vector2i(x, y)
-					if not map_renderer.is_land(candidate):
-						continue
-					var occupied := false
-					# Integer cells <2 units apart are exactly these 3x3 neighbors.
-					for oy in range(-1, 2):
-						for ox in range(-1, 2):
-							if used.has(candidate + Vector2i(ox, oy)): occupied = true
-					if not occupied and not pathfinder.find_path(spawn_cell, candidate).is_empty():
-						chosen = candidate
-						found = true
-						break
-		used[chosen] = true
+	var spawn_cells := FORMATION.find_cells(map_renderer, spawn_cell, player_units.size(), DEFAULT_MAP_SIZE, pathfinder, spawn_cell)
+	if spawn_cells.is_empty():
+		push_error("No reachable land footprint for the default squad formation")
+		return
+	for index in player_units.size():
+		var unit := player_units[index]
+		var chosen: Vector2i = spawn_cells[index]
 		unit.set_trail_wear(map_renderer.trail_wear)
 		unit.place_on_cell(chosen, map_renderer.cell_to_world(chosen.x, chosen.y))
 	seed_label.text = "Seed: %d  •  Вода: %d%%" % [world_seed, int(map_data["water_percent"])]
@@ -155,7 +159,7 @@ func generate_world() -> void:
 
 
 func _setup_weather_controls() -> void:
-	var rows := $UI/MapControls/Margin/Rows
+	var rows := world_controls.get_node("Margin/Rows")
 	time_slider.tooltip_text = "Проверка освещения: переводит часы, но не проматывает погоду. Для смены погоды используй скорость времени."
 	var speed := OptionButton.new()
 	speed.name = "SimulationSpeed"
@@ -195,7 +199,7 @@ func _setup_weather_controls() -> void:
 
 
 func _sync_weather_controls() -> void:
-	var rows := $UI/MapControls/Margin/Rows
+	var rows := world_controls.get_node("Margin/Rows")
 	rows.get_node("AutoWeather").set_pressed_no_signal(weather.climate.automatic)
 	var requested_rain: bool = weather.climate.phase == weather.MODEL.Phase.RAIN if weather.climate.automatic else weather.climate.manual_rain
 	rows.get_node("RainToggle").set_pressed_no_signal(requested_rain)
@@ -221,12 +225,14 @@ func _on_new_map_pressed() -> void:
 
 
 func _setup_rts_controls() -> void:
+	lead_unit.squad_id = 1
 	player_units.append(lead_unit)
 	var scene := preload("res://scenes/units/knight.tscn")
 	for index in range(SQUAD_SIZE - 1):
 		var unit := scene.instantiate() as Unit3D
 		unit.name = "Worker_%d" % (index + 2)
 		unit.display_name = "Синий рыцарь №%d" % (index + 2)
+		unit.squad_id = 1
 		map_renderer.add_child(unit)
 		player_units.append(unit)
 	rts = preload("res://scripts/input/rts_controller.gd").new()
@@ -234,5 +240,5 @@ func _setup_rts_controls() -> void:
 	rts.world = self
 	$UI.add_child(rts)
 	# Prevent a focused button consuming Space, the selection-focus shortcut.
-	for button in $UI/MapControls.find_children("*", "BaseButton", true, false):
+	for button in world_controls.find_children("*", "BaseButton", true, false):
 		button.focus_mode = Control.FOCUS_NONE

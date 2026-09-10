@@ -3,6 +3,8 @@ extends Node
 signal result_received(accepted: bool, point: Vector3, message: String)
 const PATHS_PER_FRAME := 4
 const MAX_PENDING := 1024
+const FORMATION := preload("res://scripts/units/squad_formation.gd")
+const CONTROL_GROUPS := preload("res://scripts/units/unit_control_groups.gd")
 var pending: Array[Dictionary] = []
 var world: Node3D
 
@@ -12,43 +14,30 @@ func move(units: Array, cell: Vector2i, queued: bool) -> void:
 	if not world.map_renderer.is_land(cell):
 		result_received.emit(false, point, "Здесь нельзя пройти")
 		return
-	var occupied := {}
-	for unit: Unit3D in units:
-		if not is_instance_valid(unit):
-			continue
+	var valid_units := CONTROL_GROUPS.expand(units, world.rts.units())
+	var targets := FORMATION.find_cells(world.map_renderer, cell, valid_units.size())
+	if targets.is_empty():
+		result_received.emit(false, point, "Не хватает места для строя")
+		return
+	for index in valid_units.size():
+		var unit: Unit3D = valid_units[index]
 		if not queued:
 			unit.order_revision += 1
 			pending = pending.filter(func(job: Dictionary): return job.unit != unit)
 		if pending.size() >= MAX_PENDING:
 			result_received.emit(false, point, "Очередь приказов заполнена")
 			break
-		var target := _free_destination(cell, occupied)
-		if target == Vector2i(-1, -1):
-			result_received.emit(false, point, "Не хватает свободных целей для группы")
-			continue
-		occupied[target] = true
+		var target: Vector2i = targets[index]
 		pending.append({"unit": unit, "revision": unit.order_revision,
 			"target": target, "queued": queued})
 
 
-func _free_destination(center: Vector2i, occupied: Dictionary) -> Vector2i:
-	# Spread group endpoints over nearby land. This is not dynamic unit avoidance.
-	for radius in range(9):
-		for y in range(-radius, radius + 1):
-			for x in range(-radius, radius + 1):
-				if maxi(absi(x), absi(y)) != radius:
-					continue
-				var candidate := center + Vector2i(x, y)
-				if not occupied.has(candidate) and world.map_renderer.is_land(candidate):
-					return candidate
-	return Vector2i(-1, -1)
-
-
 func stop(units: Array) -> void:
-	for unit: Unit3D in units:
+	var controlled := CONTROL_GROUPS.expand(units, world.rts.units())
+	for unit: Unit3D in controlled:
 		if is_instance_valid(unit):
 			unit.stop_orders(world.map_renderer)
-	pending = pending.filter(func(job: Dictionary): return job.unit not in units)
+	pending = pending.filter(func(job: Dictionary): return job.unit not in controlled)
 
 
 func reset() -> void:
