@@ -54,7 +54,7 @@ func bind_visibility() -> void:
 	terrain_material.set_shader_parameter("sight_mask",world.vision.state.texture)
 	terrain_material.set_shader_parameter("previous_mask",world.vision.state.previous)
 	terrain_material.set_shader_parameter("mask_blend",world.vision.state.blend)
-	terrain_material.set_shader_parameter("visibility_enabled",true)
+	terrain_material.set_shader_parameter("visibility_enabled",world.vision.enabled)
 	terrain_material.set_shader_parameter("memory_darkness",world.vision.MEMORY_DARKNESS)
 
 func _cache_resource_regions() -> void:
@@ -95,6 +95,7 @@ func diamond() -> PackedVector2Array:
 	return PackedVector2Array([Vector2(size.x * 0.5, 20), Vector2(size.x - 20, size.y * 0.5), Vector2(size.x * 0.5, size.y - 20), Vector2(20, size.y * 0.5)])
 
 func is_contact_visible(team: int, seen_by: Array, point: Vector3 = Vector3.INF) -> bool:
+	if world.vision != null and not world.vision.enabled: return true
 	if team == world.local_team_id: return true
 	if world.local_team_id not in seen_by: return false
 	return not point.is_finite() or world.vision == null or world.vision.state.is_visible(point)
@@ -126,6 +127,9 @@ func refresh_landmarks() -> void:
 			item.remembered = {"position":item.position,"kind":item.kind,"team":item.team}
 
 func visible_landmarks() -> Array:
+	# Debug visibility reads live data without writing it into exploration memory.
+	if world.vision != null and not world.vision.enabled:
+		return landmarks.values().filter(func(item): return not item.removed).map(func(item): return {"position":item.position,"kind":item.kind,"team":item.team})
 	return landmarks.values().map(func(item): return item.remembered).filter(func(item): return not item.is_empty())
 
 func marker_visible(point: Vector3) -> bool:

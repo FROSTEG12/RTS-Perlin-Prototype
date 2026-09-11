@@ -2,6 +2,7 @@ extends Control
 ## Hidden utility UI; independent of the future gameplay HUD.
 var world: Node3D
 var panel: PanelContainer
+var fog_of_war_toggle: CheckButton
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -29,6 +30,14 @@ func _ready() -> void:
 	close.focus_mode = Control.FOCUS_NONE
 	close.pressed.connect(func(): set_open(false))
 	header.add_child(close)
+	fog_of_war_toggle = CheckButton.new()
+	fog_of_war_toggle.text = "Туман войны"
+	fog_of_war_toggle.tooltip_text = "Выключить: показать всю карту и объекты. Разведка не стирается. Погодный туман не меняется."
+	fog_of_war_toggle.focus_mode = Control.FOCUS_NONE
+	fog_of_war_toggle.button_pressed = world.vision.enabled
+	fog_of_war_toggle.toggled.connect(world.vision.set_enabled)
+	world.vision.enabled_changed.connect(fog_of_war_toggle.set_pressed_no_signal)
+	rows.add_child(fog_of_war_toggle)
 	var tabs := TabContainer.new()
 	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	rows.add_child(tabs)

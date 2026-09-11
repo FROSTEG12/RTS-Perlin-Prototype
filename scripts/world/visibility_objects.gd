@@ -10,7 +10,7 @@ func reset() -> void:
 
 func refresh() -> void:
 	for node in get_tree().get_nodes_in_group("vision_dynamic"):
-		if node is Node3D: node.visible = vision.state.is_visible(node.global_position)
+		if node is Node3D: node.visible = not vision.enabled or vision.state.is_visible(node.global_position)
 	for node in get_tree().get_nodes_in_group("vision_static"):
 		if not node is Node3D: continue
 		var id := node.get_instance_id()
@@ -18,7 +18,7 @@ func refresh() -> void:
 			records[id] = {"source":weakref(node),"snapshot":null,"position":node.global_position,"captured":-1000}
 		var record: Dictionary = records[id]
 		var seen: bool = vision.state.is_visible(node.global_position)
-		node.visible = seen
+		node.visible = seen or not vision.enabled
 		if seen and Time.get_ticks_msec()-record.captured >= 100:
 			if is_instance_valid(record.snapshot): record.snapshot.free()
 			record.snapshot = Node3D.new()
@@ -27,7 +27,7 @@ func refresh() -> void:
 			_capture_meshes(node,record.snapshot)
 			record.position = node.global_position
 			record.captured = Time.get_ticks_msec()
-		if is_instance_valid(record.snapshot): record.snapshot.visible = not seen
+		if is_instance_valid(record.snapshot): record.snapshot.visible = vision.enabled and not seen
 	# Destruction is learned only when the last known position becomes visible again.
 	for id in records.keys():
 		var record: Dictionary = records[id]
@@ -35,7 +35,7 @@ func refresh() -> void:
 		if not is_instance_valid(record.snapshot) or vision.state.is_visible(record.position):
 			if is_instance_valid(record.snapshot): record.snapshot.free()
 			records.erase(id)
-		else: record.snapshot.visible = true
+		else: record.snapshot.visible = vision.enabled
 	if vision.world.hud != null: vision.world.hud.minimap.refresh_landmarks()
 
 func _capture_meshes(source: Node, target: Node3D) -> void:

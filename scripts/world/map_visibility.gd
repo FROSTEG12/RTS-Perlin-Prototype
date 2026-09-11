@@ -1,4 +1,5 @@
 extends Node3D
+signal enabled_changed(value: bool)
 const MEMORY_DARKNESS := 0.65
 const RANGE := preload("res://scripts/world/vision_range.gd")
 ## Flat screen-space darkness. No cloud mesh and no toggling trees on discovery.
@@ -9,6 +10,15 @@ var material: ShaderMaterial
 var objects: Node3D
 var last_sources: Array = []
 var edge_clock := 0.0
+var enabled := true
+
+func set_enabled(value: bool) -> void:
+	if enabled == value: return
+	enabled = value
+	_sync_visuals()
+	objects.refresh()
+	if world.hud != null: world.hud.minimap.queue_redraw()
+	enabled_changed.emit(enabled)
 
 func _ready() -> void:
 	material = ShaderMaterial.new()
@@ -63,13 +73,15 @@ func refresh_sight(immediate: bool = false) -> void:
 
 func can_observe(node: Node3D) -> bool:
 	if node.is_in_group("vision_dynamic") or node.is_in_group("vision_static"):
-		return state.is_visible(node.global_position) and node.is_visible_in_tree()
+		return (not enabled or state.is_visible(node.global_position)) and node.is_visible_in_tree()
 	return true
 
 func _sync_visuals() -> void:
+	overlay.visible = enabled
 	material.set_shader_parameter("mask_blend",state.blend)
 	material.set_shader_parameter("edge_time",edge_clock)
 	if world.hud != null:
+		world.hud.minimap.terrain_material.set_shader_parameter("visibility_enabled",enabled)
 		world.hud.minimap.terrain_material.set_shader_parameter("mask_blend",state.blend)
 
 func _process(delta: float) -> void:
