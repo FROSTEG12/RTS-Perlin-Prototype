@@ -11,6 +11,14 @@ var yaw := 0.0
 var shape := PackedVector2Array()
 var connections: Array[Dictionary] = []
 
+# Passage is narrower than the ~1.91 m portcullis: leave clearance at the jambs.
+const GATE_PASSAGE_HALF_WIDTH := .65
+
+func blocks_navigation(point: Vector3) -> bool:
+	if building_id != &"fortress_gate": return true
+	var local_point := (point-position).rotated(Vector3.UP,-yaw)
+	return absf(local_point.x)>GATE_PASSAGE_HALF_WIDTH
+
 func _ready() -> void:
 	model_anchor = Node3D.new()
 	model_anchor.name = "ModelAnchor"

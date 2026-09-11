@@ -248,7 +248,10 @@ func commit(repeat: bool = false) -> bool:
 	for cell in cells_at(origin_cell):
 		if not occupied.has(cell): occupied[cell] = []
 		occupied[cell].append(site)
-		world.pathfinder.astar_grid.set_point_solid(cell,true)
+		# Keep the entire footprint reserved for building, but leave the arch
+		# walkable. Never clear terrain or another module's navigation obstacle.
+		if site.blocks_navigation(world.map_renderer.cell_to_world(cell.x,cell.y)):
+			world.pathfinder.astar_grid.set_point_solid(cell,true)
 	if DEFINITIONS[building_id].clear_forest:
 		world.map_renderer.TREE_RESOURCES.clear_area(world.map_renderer,area,shape)
 		world.hud.minimap.refresh_forest(area)
