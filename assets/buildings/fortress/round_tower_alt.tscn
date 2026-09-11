@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/buildings/fortress/round_tower_alt.res" id="1_0qdjm"]
+
+[node name="round_tower_alt" type="MeshInstance3D" unique_id=1111489966]
+mesh = ExtResource("1_0qdjm")

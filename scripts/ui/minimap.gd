@@ -49,6 +49,12 @@ func project(point: Vector3) -> Vector2:
 	var inner := size - Vector2(40, 40)
 	return size * 0.5 + Vector2((normalized.x - normalized.y) * inner.x * 0.5, (normalized.x + normalized.y) * inner.y * 0.5)
 
+func refresh_forest(area: Rect2) -> void:
+	var map := terrain.get_image()
+	preload("res://scripts/ui/minimap_terrain.gd").refresh_forest(map,world.map_renderer,area)
+	terrain.update(map)
+	terrain_layer.queue_redraw()
+
 func bind_visibility() -> void:
 	if world.vision == null or world.vision.state.texture == null: return
 	terrain_material.set_shader_parameter("sight_mask",world.vision.state.texture)

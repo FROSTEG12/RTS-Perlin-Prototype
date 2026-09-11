@@ -272,6 +272,7 @@ func _open_section(index: int) -> void:
 	_set_section(-1 if active_section == index else index)
 
 func _set_section(index: int) -> void:
+	if world.placement != null: world.placement.cancel()
 	if index == 2:
 		formation_panel.open()
 		return

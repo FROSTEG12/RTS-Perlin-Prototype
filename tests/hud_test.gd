@@ -50,7 +50,7 @@ func run() -> void:
 		for entry in category.items:
 			assert(entry.preview != null)
 			assert(entry.preview.resource_path.begins_with("res://assets/ui/buildings/"))
-	assert(building_count == 7)
+	assert(building_count == 11)
 	assert(not "bottom" in world.hud and not "cards" in world.hud)
 	assert(not world.hud.buildings.visible)
 	world.hud._open_section(0)
@@ -174,14 +174,14 @@ func run() -> void:
 		for category_index in 6:
 			await gui_click(world.hud.buildings.category_buttons[category_index])
 			for frame in 4: await process_frame
-			assert(world.hud.buildings.building_buttons.size() == [1, 1, 2, 1, 1, 1][category_index])
+			assert(world.hud.buildings.building_buttons.size() == [1, 1, 2, 1, 1, 5][category_index])
 			assert(root.get_visible_rect().encloses(world.hud.buildings.get_global_rect()))
 			await gui_click(world.hud.buildings.building_buttons[0])
 			assert(not world.hud.buildings.active_building.is_empty())
 			if category_index == 5:
-				assert(world.hud.buildings.active_building == &"fortress_walls")
+				assert(world.hud.buildings.active_building == &"fortress_wall")
 				await create_timer(0.22).timeout
-				assert(world.hud.buildings.building_buttons[0].artwork.texture.resource_path.ends_with("fortress_walls_closeup.png"))
+				assert(world.hud.buildings.building_buttons[0].artwork.texture.resource_path.ends_with("modules/wall.png"))
 				if dimensions == Vector2i(1280,720) and DisplayServer.get_name() != "headless":
 					await RenderingServer.frame_post_draw
 					var shelf: Rect2 = world.hud.buildings.get_global_rect().merge(world.hud.dock.get_global_rect()).grow(4)

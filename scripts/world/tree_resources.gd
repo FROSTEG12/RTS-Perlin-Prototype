@@ -142,3 +142,25 @@ static func update_shadow_direction(renderer: Node3D, direction: Vector3) -> voi
 	# Only six uniforms; no CPU transforms or per-tree updates every frame.
 	for material in renderer.get_meta("tree_shadow_materials", []):
 		material.set_shader_parameter("sun_direction", direction)
+
+static func clear_area(renderer: Node3D, area: Rect2) -> int:
+	var remaining: Array[Dictionary] = []
+	var removed := 0
+	for resource in renderer.resources:
+		var point: Vector3 = renderer.cell_to_world(resource.x,resource.y)
+		point += Vector3(resource.get("offset_x",0.0),0,resource.get("offset_y",0.0))
+		if resource.kind == "tree" and area.has_point(Vector2(point.x,point.z)):
+			removed += 1
+		else: remaining.append(resource)
+	if removed == 0: return 0
+	renderer.resources = remaining
+	# Hide matching trunks in both instanced batches, including their shadows.
+	# Keep all other transforms/variants intact; no full forest rebuild on click.
+	for batch in renderer.resource_root.get_children():
+		if not batch is MultiMeshInstance3D or not (str(batch.name).begins_with("Trees_") or str(batch.name).begins_with("TreeShadows_")): continue
+		for index in batch.multimesh.instance_count:
+			var transform: Transform3D = batch.multimesh.get_instance_transform(index)
+			if area.has_point(Vector2(transform.origin.x,transform.origin.z)):
+				transform.basis = Basis.IDENTITY.scaled(Vector3.ZERO)
+				batch.multimesh.set_instance_transform(index,transform)
+	return removed

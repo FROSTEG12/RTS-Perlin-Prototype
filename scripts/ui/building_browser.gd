@@ -101,6 +101,7 @@ func set_catalog(value: Array) -> void:
 	clear_category()
 
 func clear_category() -> void:
+	building_selected.emit(&"")
 	active_category = -1
 	active_building = &""
 	list_panel.hide()
@@ -115,6 +116,7 @@ func _clear_building_cards() -> void:
 
 func select_category(index: int) -> void:
 	if index < 0 or index >= categories.size(): return
+	building_selected.emit(&"")
 	if active_category == index:
 		clear_category()
 		return
@@ -146,5 +148,6 @@ func _select_building(entry: Dictionary, card: Button) -> void:
 func contains(point: Vector2) -> bool:
 	if category_bar.is_visible_in_tree() and category_bar.get_global_rect().has_point(point): return true
 	for card in building_buttons:
-		if card.is_visible_in_tree() and card.get_visual_rect().has_point(point): return true
+		if card.is_visible_in_tree() and card.get_visual_rect().intersection(scroll.get_global_rect()).has_point(point): return true
+	if scroll.is_visible_in_tree() and scroll.get_h_scroll_bar().visible and scroll.get_h_scroll_bar().get_global_rect().has_point(point): return true
 	return false

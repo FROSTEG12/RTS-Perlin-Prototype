@@ -34,6 +34,7 @@ var hud: Control
 var pause_menu: Control
 var display_layout: Node
 var vision: Node3D
+var placement: Node3D
 var stockpile := {"Дерево": 0, "Камень": 0, "Металл": 0, "Мясо": 0, "Ягоды": 0, "Уголь": 0}
 var local_team_id := 0
 var player_units: Array[Unit3D] = []
@@ -74,6 +75,11 @@ func _ready() -> void:
 	pause_menu = preload("res://scripts/ui/pause_menu.gd").new()
 	pause_menu.world = self
 	$UI.add_child(pause_menu)
+	placement = preload("res://scripts/buildings/building_placement.gd").new()
+	placement.name = "BuildingPlacement"
+	placement.world = self
+	add_child(placement)
+	hud.buildings.building_selected.connect(placement.begin)
 	print("WORLD_READY units=", player_units.size())
 
 
@@ -128,6 +134,7 @@ func _apply_day_night_lighting() -> void:
 
 
 func generate_world() -> void:
+	if placement != null: placement.reset_world()
 	if rts != null:
 		rts.reset()
 	var generator := MapGenerator.new()

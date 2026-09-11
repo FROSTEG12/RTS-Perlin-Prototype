@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/buildings/fortress/gate.res" id="1_nat3f"]
+
+[node name="gate" type="MeshInstance3D" unique_id=159907044]
+mesh = ExtResource("1_nat3f")

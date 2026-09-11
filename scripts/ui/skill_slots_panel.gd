@@ -141,6 +141,7 @@ func sync_active() -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if get_tree().paused: return
 	var world = get_parent().world
+	if world.placement != null and world.placement.active: return
 	if world.is_generating or world.developer_tools.visible: return
 	if get_viewport().gui_get_focus_owner() is LineEdit: return
 	if not event is InputEventKey or event.echo or event.ctrl_pressed or event.alt_pressed or event.meta_pressed: return

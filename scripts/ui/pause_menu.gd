@@ -95,7 +95,9 @@ func set_open(value: bool) -> void:
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
-		if world.developer_tools.visible:
+		if world.placement != null and world.placement.active and not visible and not world.developer_tools.visible:
+			world.placement.cancel()
+		elif world.developer_tools.visible:
 			world.developer_tools.set_open(false)
 		elif visible and settings.visible: _back()
 		else: set_open(not visible)
