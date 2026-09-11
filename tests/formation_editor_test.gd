@@ -7,6 +7,18 @@ func capture(name: String) -> void:
 	for i in 5: await process_frame
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png(OUT+name)
+func mouse_button(point: Vector2, down: bool) -> void:
+	var event := InputEventMouseButton.new()
+	event.position = point
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = down
+	root.push_input(event,true)
+func mouse_motion(point: Vector2, delta: Vector2) -> void:
+	var event := InputEventMouseMotion.new()
+	event.position = point
+	event.relative = delta
+	event.button_mask = MOUSE_BUTTON_MASK_LEFT
+	root.push_input(event,true)
 func run() -> void:
 	var library = LIB.new(OUT+"formations-test-%d.json" % Time.get_ticks_usec())
 	var wedge: Array = []
@@ -76,7 +88,31 @@ func run() -> void:
 	panel.save_draft()
 	assert(not panel.editing)
 	assert(not world.game_camera.formation_editing)
+	for i in 8: await process_frame
+	var inventory_card = panel.list_rows.get_child(panel.list_rows.get_child_count()-1)
+	world.rts.set_selection([world.lead_unit])
+	var revision: int = world.lead_unit.order_revision
+	inventory_card.pressed.emit()
+	assert(world.lead_unit.order_revision == revision,"Inventory clicks must never apply a formation")
+	await capture("formation-inventory.png")
 	var quick = world.hud.skill_slots.slots[0]
+	if DisplayServer.get_name() != "headless":
+		var source: Vector2 = inventory_card.get_global_rect().get_center()
+		var target: Vector2 = quick.get_global_rect().get_center()
+		root.warp_mouse(source)
+		mouse_button(source,true)
+		await process_frame
+		mouse_motion(source+Vector2(20,0),Vector2(20,0))
+		await process_frame
+		assert(root.gui_is_dragging(),"Dragging a skill card must start a GUI drag")
+		root.warp_mouse(target)
+		mouse_motion(target,target-source-Vector2(20,0))
+		await process_frame
+		mouse_button(target,false)
+		for i in 3: await process_frame
+		assert(world.hud.formation_library.bindings[0] == "test_wedge","Real mouse drag must assign Q")
+		assert(world.lead_unit.order_revision == revision,"Assigning a skill must not apply it")
+		print("FORMATION_INVENTORY_DRAG_PASS")
 	assert(quick._can_drop_data(Vector2.ZERO,{"kind":"formation","id":"test_wedge"}))
 	quick._drop_data(Vector2.ZERO,{"kind":"formation","id":"test_wedge"})
 	assert(world.hud.formation_library.bindings[0] == "test_wedge" and quick.preview.size() == 15)

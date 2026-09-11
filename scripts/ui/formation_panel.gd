@@ -6,7 +6,7 @@ var editing := false
 var draft_id := ""
 var rows: VBoxContainer
 var list_view: VBoxContainer
-var list_rows: VBoxContainer
+var list_rows: GridContainer
 var editor_view: HBoxContainer
 var canvas: Control
 var name_input: LineEdit
@@ -16,8 +16,7 @@ var count_label: Label
 var message: Label
 var allowed: Array[CheckBox] = []
 var save_button: Button
-var assign_menu: PopupMenu
-var assign_id := ""
+var heading: Label
 
 func _ready() -> void:
 	mouse_filter = MOUSE_FILTER_STOP
@@ -34,6 +33,7 @@ func _ready() -> void:
 	var header := HBoxContainer.new()
 	rows.add_child(header)
 	var title := Label.new()
+	heading = title
 	title.text = "ПОСТРОЕНИЯ"
 	title.add_theme_font_size_override("font_size",18)
 	title.size_flags_horizontal = SIZE_EXPAND_FILL
@@ -42,18 +42,24 @@ func _ready() -> void:
 	list_view = VBoxContainer.new()
 	list_view.size_flags_vertical = SIZE_EXPAND_FILL
 	rows.add_child(list_view)
-	make_button("+ Создать построение",list_view,func(): edit_template({}))
 	var help := Label.new()
-	help.text = "Перетащи шаблон на Q/W/E/D/F/R или нажми «Слот»."
+	help.text = "Инвентарь навыков · перетащи построение на быстрый слот"
 	help.add_theme_font_size_override("font_size",12)
 	list_view.add_child(help)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	list_view.add_child(scroll)
-	list_rows = VBoxContainer.new()
+	list_rows = GridContainer.new()
+	list_rows.columns = 4
+	list_rows.add_theme_constant_override("h_separation",10)
+	list_rows.add_theme_constant_override("v_separation",10)
 	list_rows.size_flags_horizontal = SIZE_EXPAND_FILL
 	scroll.add_child(list_rows)
+	var footer := HBoxContainer.new()
+	footer.alignment = BoxContainer.ALIGNMENT_END
+	list_view.add_child(footer)
+	make_button("+ Создать построение",footer,func(): edit_template({}))
 	editor_view = HBoxContainer.new()
 	editor_view.add_theme_constant_override("separation",14)
 	editor_view.size_flags_vertical = SIZE_EXPAND_FILL
@@ -120,11 +126,6 @@ func _ready() -> void:
 	message.add_theme_font_size_override("font_size",12)
 	message.custom_minimum_size.y = 30
 	rows.add_child(message)
-	assign_menu = PopupMenu.new()
-	for i in 6: assign_menu.add_item(["Q","W","E","D","F","R"][i],i)
-	assign_menu.id_pressed.connect(func(index):
-		message.text = "Назначено на "+["Q","W","E","D","F","R"][index] if library.bind_slot(index,assign_id) else "Не удалось сохранить назначение")
-	add_child(assign_menu)
 	library.changed.connect(refresh_list)
 	editor_view.hide()
 	refresh_list()
@@ -141,28 +142,19 @@ func refresh_list() -> void:
 	for child in list_rows.get_children():
 		list_rows.remove_child(child)
 		child.queue_free()
+	var selection := ButtonGroup.new()
 	for template in library.templates:
-		var row := HBoxContainer.new()
-		list_rows.add_child(row)
 		var item := preload("res://scripts/ui/formation_list_button.gd").new()
 		item.template = template
-		item.text = template.name
-		item.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		item.size_flags_horizontal = SIZE_EXPAND_FILL
-		item.focus_mode = FOCUS_NONE
-		item.tooltip_text = "Применить к выделенному отряду. Можно перетащить на быстрый слот."
-		item.pressed.connect(func(): apply_template(template))
-		row.add_child(item)
-		make_button("Правка",row,func(): edit_template(template))
-		var bind := make_button("Слот",row,func():
-			assign_id = template.id
-			assign_menu.position = Vector2i(DisplayServer.mouse_get_position())
-			assign_menu.popup())
-		bind.tooltip_text = "Назначить на быструю клавишу"
+		item.button_group = selection
+		item.edit_requested.connect(func(): edit_template(template))
+		item.pressed.connect(func(): message.text = template.name+" · перетащи на быстрый слот. ПКМ — изменить.")
+		list_rows.add_child(item)
 	if library.load_error: message.text = "Файл построений повреждён: запись заблокирована для сохранности данных."
 
 func edit_template(template: Dictionary) -> void:
 	editing = true
+	heading.text = "СОЗДАНИЕ ПОСТРОЕНИЯ" if template.is_empty() or template.id == "default" else "РЕДАКТОР ПОСТРОЕНИЯ"
 	draft_id = template.get("id", "")
 	name_input.text = template.get("name", "") if draft_id != "default" else "Моё построение"
 	canvas.points = template.get("slots", []).duplicate(true)
@@ -182,6 +174,7 @@ func edit_template(template: Dictionary) -> void:
 
 func close_editor() -> void:
 	editing = false
+	heading.text = "ПОСТРОЕНИЯ"
 	world.game_camera.formation_editing = false
 	world.hud.formation_scrim.hide()
 	name_input.release_focus()
@@ -202,7 +195,7 @@ func save_draft() -> void:
 		message.text = error
 		return
 	close_editor()
-	message.text = "Сохранено. Перетащи шаблон на быстрый слот."
+	message.text = "«%s» добавлено в инвентарь навыков. Перетащи карточку на Q/W/E/D/F/R." % name_input.text
 
 func apply_template(template: Dictionary) -> bool:
 	var formations = world.rts.orders.formations

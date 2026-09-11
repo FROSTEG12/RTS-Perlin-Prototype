@@ -242,7 +242,7 @@ func _layout_hud() -> void:
 	_place(armies, Vector2(army_x, panel_bottom - army_height), Vector2(army_width, army_height))
 	armies._layout()
 	var formation_width := minf(size.x-20,760.0) if formation_panel.editing else 500.0
-	var formation_height := minf(size.y-100,520.0) if formation_panel.editing else 280.0
+	var formation_height := minf(size.y-100,520.0) if formation_panel.editing else 310.0
 	formation_height = maxf(formation_height,formation_panel.get_combined_minimum_size().y)
 	var formation_x := (size.x-formation_width)*0.5 if formation_panel.editing else clampf((size.x-formation_width)*0.5,EDGE,panel_right-formation_width)
 	var formation_y := (size.y-formation_height)*0.5 if formation_panel.editing else panel_bottom-formation_height
