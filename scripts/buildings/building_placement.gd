@@ -1,7 +1,7 @@
 extends Node3D
 ## One placement transaction: preview never mutates forest, navigation or resources.
 const DEFINITIONS := {
-	&"sawmill": {"title":"Лесопилка","size":Vector2i(13,9),"clear_forest":true,"model":"sawmill"},
+	&"sawmill": {"title":"Лесопилка","size":Vector2i(8,6),"clear_forest":true,"model":"sawmill"},
 	&"fortress_wall": {"title":"Секция стены","size":Vector2i(6,2),"clear_forest":true,"model":"wall"},
 	&"fortress_gate": {"title":"Ворота","size":Vector2i(6,2),"clear_forest":true,"model":"gate"},
 	&"fortress_round_tower": {"title":"Круглая башня","size":Vector2i(3,3),"clear_forest":true,"model":"round_tower"},
@@ -25,6 +25,11 @@ var hint_panel: PanelContainer
 var preview_model: Node3D
 var projection_material: ShaderMaterial
 const MODEL = preload("res://scripts/buildings/building_model.gd")
+const GEO = preload("res://scripts/buildings/building_geometry.gd")
+const JOINTS = preload("res://scripts/buildings/fortress_connections.gd")
+var connection := {}
+var orbit_locked := false
+var orbit_pointer := Vector2.ZERO
 
 func _ready() -> void:
 	preview = Node3D.new()
@@ -91,6 +96,8 @@ func cancel() -> void:
 	if active and world.hud.buildings.active_category >= 0:
 		world.hud.buildings.list_panel.show()
 	active = false
+	connection.clear()
+	orbit_locked = false
 	if is_instance_valid(preview_model): preview_model.free()
 	preview_model = null
 	projection_material = null
@@ -102,52 +109,42 @@ func dimensions() -> Vector2i:
 	return Vector2i(value.y,value.x) if quarter_turn%2 else value
 
 func cells_at(origin: Vector2i) -> Array[Vector2i]:
-	var result: Array[Vector2i] = []
-	var size := dimensions()
-	for y in size.y:
-		for x in size.x: result.append(origin+Vector2i(x,y))
-	return result
+	return GEO.cells(shape_at(origin),world.map_renderer)
+
+func pose_at(origin: Vector2i) -> Dictionary:
+	if origin == origin_cell and not connection.is_empty(): return connection
+	var point: Vector3 = world.map_renderer.cell_to_world(origin.x,origin.y)
+	return {"center":Vector2(point.x,point.z)+(Vector2(dimensions())-Vector2.ONE)*.5,"yaw":quarter_turn*PI/2.0}
+
+func shape_at(origin: Vector2i) -> PackedVector2Array:
+	var pose := pose_at(origin)
+	return GEO.polygon(pose.center,Vector2(DEFINITIONS[building_id].size),pose.yaw,JOINTS.is_round(building_id))
 
 func bounds_at(origin: Vector2i) -> Rect2:
-	var point: Vector3 = world.map_renderer.cell_to_world(origin.x,origin.y)
-	return Rect2(Vector2(point.x,point.z)-Vector2.ONE*.5,Vector2(dimensions()))
+	return GEO.bounds(shape_at(origin))
 
 func snap(point: Vector3) -> Vector2i:
 	var size := dimensions()
 	return world.map_renderer.world_to_cell(point-Vector3((size.x-1)*.5,0,(size.y-1)*.5))
 
-func snap_neighbors(origin: Vector2i, enabled: bool) -> Vector2i:
-	# Optional edge magnet; it never stretches/rotates a wall or permits overlap.
-	if not enabled or not str(building_id).begins_with("fortress_"): return origin
-	var size := dimensions()
-	var result := origin
-	var best := 5.0
-	for site in sites:
-		if not str(site.building_id).begins_with("fortress_"): continue
-		var other: Vector2i = site.footprint
-		if site.quarter_turn%2: other = Vector2i(other.y,other.x)
-		var start: Vector2i = site.origin_cell
-		var candidates: Array[Vector2i] = []
-		for y in [origin.y,start.y,start.y+other.y-size.y]:
-			candidates.append(Vector2i(start.x-size.x,y))
-			candidates.append(Vector2i(start.x+other.x,y))
-		for x in [origin.x,start.x,start.x+other.x-size.x]:
-			candidates.append(Vector2i(x,start.y-size.y))
-			candidates.append(Vector2i(x,start.y+other.y))
-		for candidate in candidates:
-			var touches_x: bool = candidate.x+size.x == start.x or candidate.x == start.x+other.x
-			var touches_y: bool = candidate.y+size.y == start.y or candidate.y == start.y+other.y
-			var overlap_x: bool = mini(candidate.x+size.x,start.x+other.x)>maxi(candidate.x,start.x)
-			var overlap_y: bool = mini(candidate.y+size.y,start.y+other.y)>maxi(candidate.y,start.y)
-			if not ((touches_x and overlap_y) or (touches_y and overlap_x)): continue
-			var distance := Vector2(candidate-origin).length_squared()
-			if distance < best and validate(candidate).is_empty():
-				best = distance
-				result = candidate
-	return result
+func set_pointer_ground(point: Vector3) -> void:
+	origin_cell = snap(point)
+	connection = JOINTS.nearest(sites,building_id,Vector2(point.x,point.z)) if str(building_id).begins_with("fortress_") else {}
 
 func rotate_step(direction: int) -> void:
 	if not active: return
+	if not connection.is_empty():
+		if JOINTS.is_round(connection.site.building_id) and JOINTS.kind(building_id) == "wall":
+			var next_yaw: float = connection.yaw+direction*PI/12.0
+			var target_port: int = connection.target_port
+			connection = JOINTS.candidate(connection.site,-1,connection.direction.rotated(-direction*PI/12.0),building_id)
+			connection.yaw = next_yaw
+			connection.target_port = target_port
+			orbit_locked = true
+			orbit_pointer = get_viewport().get_mouse_position()
+		# Fixed sockets stay aligned; a wall cannot turn at another wall/gate.
+		refresh_preview()
+		return
 	var center := bounds_at(origin_cell).get_center()
 	quarter_turn = posmod(quarter_turn+direction,4)
 	origin_cell = snap(Vector3(center.x,0,center.y))
@@ -157,10 +154,23 @@ func validate(origin: Vector2i) -> String:
 	if not active: return "Выберите лесопилку"
 	var renderer = world.map_renderer
 	var area := bounds_at(origin)
+	var shape := shape_at(origin)
+	var joint: Dictionary = connection if origin == origin_cell else {}
+	if not joint.is_empty():
+		var error: String = JOINTS.availability(joint.site,joint.port,joint.direction,building_id)
+		if not error.is_empty(): return error
+	for other in sites:
+		if joint.is_empty() and area.grow(.8).intersects(GEO.bounds(other.shape)) and (JOINTS.kind(building_id) == "gate" or JOINTS.kind(other.building_id) == "gate") and not JOINTS.compatible(building_id,other.building_id) and str(building_id).begins_with("fortress_"):
+			return "К воротам подходят только квадратные башни"
+		if GEO.intersects(shape,other.shape):
+			if not JOINTS.collision_allowed(other,joint,shape): return "Объекты пересекаются вне соединения"
+		elif joint.is_empty() and str(building_id).begins_with("fortress_") and str(other.building_id).begins_with("fortress_") and area.grow(.8).intersects(GEO.bounds(other.shape)):
+			return "Подведите модуль к совместимому соединению"
 	var footprint := cells_at(origin)
 	for cell in footprint:
 		if not renderer.is_land(cell): return "Нужна суша в пределах карты"
-		if occupied.has(cell) or world.pathfinder.astar_grid.is_point_solid(cell): return "Место занято"
+		# Shared raster cells at joints are legal; true model overlaps were checked above.
+		if world.pathfinder.astar_grid.is_point_solid(cell) and not occupied.has(cell): return "Место занято"
 		var point: Vector3 = renderer.cell_to_world(cell.x,cell.y)
 		if world.vision.enabled and not world.vision.state.is_visible(point): return "Нужен обзор всей площадки"
 		# Logical land cells near a smoothed coastline can still contain water.
@@ -169,10 +179,11 @@ func validate(origin: Vector2i) -> String:
 	for resource in renderer.resources:
 		if resource.kind == "tree": continue
 		var point: Vector3 = renderer.cell_to_world(resource.x,resource.y)
-		if area.has_point(Vector2(point.x,point.z)): return "На площадке есть ресурс"
+		if Geometry2D.is_point_in_polygon(Vector2(point.x,point.z),shape): return "На площадке есть ресурс"
 	# Never trap a soldier or cut through an already accepted/queued route.
+	var expanded := Geometry2D.offset_polygon(shape,.3)
 	for unit in world.player_units:
-		if area.grow(.3).has_point(Vector2(unit.global_position.x,unit.global_position.z)): return "На площадке бойцы"
+		if not expanded.is_empty() and Geometry2D.is_point_in_polygon(Vector2(unit.global_position.x,unit.global_position.z),expanded[0]): return "На площадке бойцы"
 		for cell in unit.target_cells:
 			if cell in footprint: return "Через площадку проходит отряд"
 	return ""
@@ -184,45 +195,62 @@ func update_pointer(point: Vector2) -> void:
 	if not preview.visible: return
 	var ground: Vector3 = world.game_camera.screen_to_ground(point)
 	if not ground.is_finite(): preview.hide(); hint_panel.hide(); return
-	origin_cell = snap_neighbors(snap(ground),Input.is_physical_key_pressed(KEY_CTRL))
+	if not orbit_locked or point.distance_to(orbit_pointer)>4:
+		orbit_locked = false
+		set_pointer_ground(ground)
 	refresh_preview()
 
 func refresh_preview() -> void:
 	last_error = validate(origin_cell)
-	var center := bounds_at(origin_cell).get_center()
+	var pose := pose_at(origin_cell)
+	var center: Vector2 = pose.center
 	preview.position = Vector3(center.x,.02,center.y)
 	var tint := Color("#8cdaef") if last_error.is_empty() else Color("#ee7971")
 	grid_material.set_shader_parameter("tint",tint)
 	if projection_material: projection_material.set_shader_parameter("tint",tint)
-	grid_material.set_shader_parameter("footprint",Vector2(dimensions()))
+	grid_material.set_shader_parameter("footprint",Vector2(DEFINITIONS[building_id].size))
+	grid_material.set_shader_parameter("circular",JOINTS.is_round(building_id))
+	grid.rotation.y = pose.yaw
 	grid_material.set_shader_parameter("map_min",Vector2.ONE*(-world.map_renderer.get_half_extent()))
-	if is_instance_valid(preview_model): preview_model.rotation.y = quarter_turn*PI/2.0
-	arrow.rotation = Vector3(-PI/2,0,-quarter_turn*PI/2.0)
-	arrow.position = Vector3(0,.10,-DEFINITIONS[building_id].size.y*.5-.8).rotated(Vector3.UP,quarter_turn*PI/2.0)
+	if is_instance_valid(preview_model): preview_model.rotation.y = pose.yaw
+	# The arrow follows the door/banner side, normalized to local +Z in MODEL.
+	arrow.basis = Basis(Vector3.UP,pose.yaw)*Basis(Vector3.RIGHT,-PI/2)*Basis(Vector3.BACK,PI)
+	arrow.position = Vector3(0,.10,DEFINITIONS[building_id].size.y*.5+.8).rotated(Vector3.UP,pose.yaw)
 	arrow.modulate = tint
 	status.add_theme_color_override("font_color",tint)
-	status.text = DEFINITIONS[building_id].title+" · %d × %d м"%[dimensions().x,dimensions().y]+"\nQ / E — поворот · ЛКМ — поставить\nShift + ЛКМ — ещё · ПКМ / Esc — отмена"
-	if str(building_id).begins_with("fortress_"): status.text += "\nCtrl — стыковка по сетке"
+	status.text = DEFINITIONS[building_id].title+" · %d × %d м"%[dimensions().x,dimensions().y]+"\n"+("Q / E — поворот · " if connection.is_empty() else "")+"ЛКМ — поставить\nShift + ЛКМ — ещё · ПКМ / Esc — отмена"
+	if str(building_id).begins_with("fortress_"):
+		if connection.is_empty(): status.text += "\nАвтоматическое соединение рядом с модулями"
+		else:
+			status.text += "\nСоединение: "+DEFINITIONS[connection.site.building_id].title
+			if JOINTS.is_round(connection.site.building_id): status.text += "\nМышь — направление · Q/E — угол ±15°"
+			else: status.text += "\nНаправление закреплено точкой соединения"
 	if not last_error.is_empty(): status.text += "\n"+last_error
 
 func commit(repeat: bool = false) -> bool:
 	last_error = validate(origin_cell)
 	if not last_error.is_empty(): refresh_preview(); return false
 	var area := bounds_at(origin_cell)
+	var pose := pose_at(origin_cell)
+	var shape := shape_at(origin_cell)
 	var site = preload("res://scripts/buildings/building_site.gd").new()
 	site.building_id = building_id
 	site.origin_cell = origin_cell
 	site.quarter_turn = quarter_turn
 	site.footprint = DEFINITIONS[building_id].size
 	site.model_name = DEFINITIONS[building_id].model
+	site.yaw = pose.yaw
+	site.shape = shape
 	add_child(site)
-	site.position = Vector3(area.get_center().x,.02,area.get_center().y)
+	site.position = Vector3(pose.center.x,.02,pose.center.y)
 	sites.append(site)
+	JOINTS.register(site,connection)
 	for cell in cells_at(origin_cell):
-		occupied[cell] = site
+		if not occupied.has(cell): occupied[cell] = []
+		occupied[cell].append(site)
 		world.pathfinder.astar_grid.set_point_solid(cell,true)
 	if DEFINITIONS[building_id].clear_forest:
-		world.map_renderer.TREE_RESOURCES.clear_area(world.map_renderer,area)
+		world.map_renderer.TREE_RESOURCES.clear_area(world.map_renderer,area,shape)
 		world.hud.minimap.refresh_forest(area)
 	world.hud.minimap.set_landmark(site.get_instance_id(),site.global_position,"building",world.local_team_id,[world.local_team_id])
 	world.rts.grid_overlay.refresh()
@@ -257,6 +285,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			if event.pressed:
 				if event.button_index == MOUSE_BUTTON_RIGHT: cancel()
 				elif not world.game_camera.dragging:
-					update_pointer(event.position)
+					# A click confirms the keyboard-selected orbit pose; only pointer
+					# movement unlocks it. Don't re-aim it at the last instant.
+					if not orbit_locked: update_pointer(event.position)
 					if preview.visible: commit(event.shift_pressed)
 			get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion:
+		update_pointer(event.position)

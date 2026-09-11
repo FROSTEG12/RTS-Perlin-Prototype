@@ -6,8 +6,22 @@ static func create(model: String) -> Node3D:
 	if model == "sawmill":
 		var box := bounds(result)
 		result.position -= Vector3(box.get_center().x,box.position.y,box.get_center().z)
+		result.position *= .6
+		result.scale *= .6
 		var anchor := Node3D.new()
 		anchor.add_child(result)
+		return anchor
+	if model in ["square_tower","round_tower","round_tower_alt"]:
+		# Logical front is +Z: sawmill door and gate portcullis (source z .329..426).
+		# Tower doors were authored on -Z; correct locally, not the socket frame.
+		if model == "square_tower":
+			# Flags skew the overall AABB. Align the stone shaft, not the flag.
+			result.position = Vector3(-.1763255,0,-.0232875)
+		var facing := Node3D.new()
+		facing.rotation.y = PI
+		facing.add_child(result)
+		var anchor := Node3D.new()
+		anchor.add_child(facing)
 		return anchor
 	return result
 

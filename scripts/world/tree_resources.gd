@@ -143,13 +143,13 @@ static func update_shadow_direction(renderer: Node3D, direction: Vector3) -> voi
 	for material in renderer.get_meta("tree_shadow_materials", []):
 		material.set_shader_parameter("sun_direction", direction)
 
-static func clear_area(renderer: Node3D, area: Rect2) -> int:
+static func clear_area(renderer: Node3D, area: Rect2, polygon: PackedVector2Array = PackedVector2Array()) -> int:
 	var remaining: Array[Dictionary] = []
 	var removed := 0
 	for resource in renderer.resources:
 		var point: Vector3 = renderer.cell_to_world(resource.x,resource.y)
 		point += Vector3(resource.get("offset_x",0.0),0,resource.get("offset_y",0.0))
-		if resource.kind == "tree" and area.has_point(Vector2(point.x,point.z)):
+		if resource.kind == "tree" and area.has_point(Vector2(point.x,point.z)) and (polygon.is_empty() or Geometry2D.is_point_in_polygon(Vector2(point.x,point.z),polygon)):
 			removed += 1
 		else: remaining.append(resource)
 	if removed == 0: return 0
@@ -160,7 +160,7 @@ static func clear_area(renderer: Node3D, area: Rect2) -> int:
 		if not batch is MultiMeshInstance3D or not (str(batch.name).begins_with("Trees_") or str(batch.name).begins_with("TreeShadows_")): continue
 		for index in batch.multimesh.instance_count:
 			var transform: Transform3D = batch.multimesh.get_instance_transform(index)
-			if area.has_point(Vector2(transform.origin.x,transform.origin.z)):
+			if area.has_point(Vector2(transform.origin.x,transform.origin.z)) and (polygon.is_empty() or Geometry2D.is_point_in_polygon(Vector2(transform.origin.x,transform.origin.z),polygon)):
 				transform.basis = Basis.IDENTITY.scaled(Vector3.ZERO)
 				batch.multimesh.set_instance_transform(index,transform)
 	return removed

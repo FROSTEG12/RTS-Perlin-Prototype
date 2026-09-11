@@ -23,9 +23,9 @@ func run() -> void:
 	camera.projection=Camera3D.PROJECTION_ORTHOGONAL
 	viewport.add_child(camera)
 	for id in ["wall","gate","round_tower","round_tower_alt","square_tower"]:
-		var model = load("res://assets/buildings/fortress/"+id+".tscn").instantiate()
+		var model = preload("res://scripts/buildings/building_model.gd").create(id)
 		viewport.add_child(model)
-		var bounds: AABB = model.get_aabb()
+		var bounds: AABB = preload("res://scripts/buildings/building_model.gd").bounds(model)
 		var center := bounds.get_center()
 		camera.position=center+Vector3(10,7,16)
 		camera.look_at(center)

@@ -42,10 +42,10 @@ func run() -> void:
 	for i in 4: await process_frame
 	world.hud.buildings.building_buttons[1].pressed.emit()
 	assert(placement.active and placement.building_id == &"sawmill")
-	assert(placement.dimensions() == Vector2i(13,9))
+	assert(placement.dimensions() == Vector2i(8,6))
 	var model_bounds: AABB = placement.MODEL.bounds(placement.preview_model)
-	assert(model_bounds.size.x > 12 and model_bounds.size.x < 13)
-	assert(model_bounds.size.z < 9 and absf(model_bounds.position.y)<.001)
+	assert(model_bounds.size.x > 7.6 and model_bounds.size.x < 7.7)
+	assert(model_bounds.size.z < 5.3 and absf(model_bounds.position.y)<.001)
 	for mesh in placement.MODEL.meshes(placement.preview_model):
 		assert(mesh.material_override == placement.projection_material)
 		assert(mesh.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
@@ -64,9 +64,12 @@ func run() -> void:
 	root.warp_mouse(pointer)
 	placement.update_pointer(pointer)
 	assert(placement.origin_cell == location and placement.last_error.is_empty())
+	assert(placement.arrow.position.z>0,"Front arrow must mark the sawmill door on +Z")
 	var old_requested: int = world.hud.skill_slots.last_requested
 	key(KEY_E)
-	assert(placement.quarter_turn == 1 and placement.dimensions() == Vector2i(9,13))
+	assert(placement.quarter_turn == 1 and placement.dimensions() == Vector2i(6,8))
+	assert(placement.arrow.position.x>0 and absf(placement.arrow.position.z)<.001)
+	assert(placement.arrow.basis.y.dot(Vector3.RIGHT)>.999,"Arrow must point toward the rotated entrance, not away from it")
 	assert(world.hud.skill_slots.last_requested == old_requested)
 	key(KEY_Q)
 	assert(placement.quarter_turn == 0 and placement.origin_cell == location)
@@ -100,7 +103,7 @@ func run() -> void:
 	await click(pointer)
 	assert(placement.sites.size() == 1 and not placement.active)
 	assert(before.size()-world.map_renderer.resources.size() == expected)
-	assert(placement.occupied.size() == 117)
+	assert(placement.occupied.size() == 48)
 	for cell in placement.occupied: assert(world.pathfinder.astar_grid.is_point_solid(cell))
 	var visible_removed := 0
 	var shadow_removed := 0
