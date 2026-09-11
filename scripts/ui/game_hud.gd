@@ -15,6 +15,8 @@ var skill_slots: PanelContainer
 var active_section := -1
 var status_panel: PanelContainer
 var formation_panel: PanelContainer
+var formation_library = preload("res://scripts/units/formation_library.gd").new()
+var formation_scrim: ColorRect
 var daylight: Control
 var navigation_buttons: Array[Button] = []
 var menu_button: Button
@@ -165,14 +167,21 @@ func _ready() -> void:
 	armies.world = world
 	add_child(armies)
 	armies.hide()
-	formation_panel = _section_panel("Построения")
-	var note := Label.new()
-	note.text = "Построения ещё не настроены"
-	note.modulate = Color("#adb5ae")
-	formation_panel.get_child(0).add_child(note)
+	formation_panel = preload("res://scripts/ui/formation_panel.gd").new()
+	formation_panel.world = world
+	formation_panel.library = formation_library
+	add_child(formation_panel)
+	formation_panel.hide()
+	skill_slots.connect_library(formation_library)
 	minimap = preload("res://scripts/ui/minimap.gd").new()
 	minimap.world = world
 	add_child(minimap)
+	formation_scrim = ColorRect.new()
+	formation_scrim.color = Color(0.01,0.02,0.03,0.5)
+	formation_scrim.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+	add_child(formation_scrim)
+	formation_scrim.hide()
+	move_child(formation_panel,-1)
 	_update()
 	resized.connect(_schedule_layout)
 	top.minimum_size_changed.connect(_schedule_layout)
@@ -232,10 +241,12 @@ func _layout_hud() -> void:
 	var army_x := clampf((size.x - army_width) * 0.5, EDGE, panel_right - army_width)
 	_place(armies, Vector2(army_x, panel_bottom - army_height), Vector2(army_width, army_height))
 	armies._layout()
-	var formation_width := 360.0
-	var formation_height := formation_panel.get_combined_minimum_size().y
-	var formation_x := clampf((size.x - formation_width) * 0.5, EDGE, panel_right - formation_width)
-	_place(formation_panel, Vector2(formation_x, panel_bottom - formation_height), Vector2(formation_width, formation_height))
+	var formation_width := minf(size.x-20,760.0) if formation_panel.editing else 500.0
+	var formation_height := minf(size.y-100,520.0) if formation_panel.editing else 280.0
+	formation_height = maxf(formation_height,formation_panel.get_combined_minimum_size().y)
+	var formation_x := (size.x-formation_width)*0.5 if formation_panel.editing else clampf((size.x-formation_width)*0.5,EDGE,panel_right-formation_width)
+	var formation_y := (size.y-formation_height)*0.5 if formation_panel.editing else panel_bottom-formation_height
+	_place(formation_panel, Vector2(formation_x,formation_y), Vector2(formation_width,formation_height))
 	minimap.queue_redraw()
 
 func _top_divider(parent: Node) -> void:
@@ -262,6 +273,7 @@ func _open_section(index: int) -> void:
 	_set_section(-1 if active_section == index else index)
 
 func _set_section(index: int) -> void:
+	if index != 2 and formation_panel.editing: formation_panel.close_editor()
 	active_section = index
 	buildings.visible = index == 0
 	armies.visible = index == 1
@@ -290,6 +302,7 @@ func _update() -> void:
 		resource_labels[key].tooltip_text = "%s: %s" % [key, world.stockpile[key]]
 
 func contains(point: Vector2) -> bool:
+	if formation_panel.editing: return true
 	if dock.contains(point): return true
 	if buildings.contains(point): return true
 	if armies.contains(point): return true

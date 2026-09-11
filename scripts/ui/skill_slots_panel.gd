@@ -8,6 +8,7 @@ const SLOT_SIZE := 64.0
 const SLOT_GAP := 6.0
 var slots: Array[Button] = []
 var last_requested := -1
+var library: RefCounted
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -26,7 +27,7 @@ func _ready() -> void:
 	row.add_theme_constant_override("separation", 6)
 	add_child(row)
 	for i in 6:
-		var slot := Button.new()
+		var slot := preload("res://scripts/ui/formation_quick_button.gd").new()
 		slot.name = "SkillSlot%d" % (i + 1)
 		slot.custom_minimum_size = Vector2.ONE * SLOT_SIZE
 		slot.focus_mode = Control.FOCUS_NONE
@@ -60,6 +61,12 @@ func _ready() -> void:
 		key.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		key_cap.add_child(key)
 		slot.toggled.connect(_on_slot_toggled.bind(i))
+		slot.formation_dropped.connect(func(id):
+			if library != null: library.bind_slot(i,id))
+		slot.gui_input.connect(func(event):
+			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT and library != null:
+				library.bind_slot(i,"")
+				slot.accept_event())
 		slots.append(slot)
 
 func fit_width(available: float) -> Vector2:
@@ -71,6 +78,20 @@ func request_slot(index: int) -> void:
 	slots[index].button_pressed = not slots[index].button_pressed
 
 func _on_slot_toggled(active: bool, index: int) -> void:
+	if library != null and get_parent().formation_panel.editing:
+		slots[index].set_pressed_no_signal(not active)
+		return
+	if library != null and not library.bindings[index].is_empty():
+		var panel = get_parent().formation_panel
+		if not active:
+			slots[index].set_pressed_no_signal(true)
+			active = true # A bound formation is a command, not a toggle-off ability.
+		if not panel.apply_template(library.get_template(library.bindings[index])):
+			slots[index].set_pressed_no_signal(false)
+			sync_active()
+			get_parent()._set_section(2)
+			return
+		slots[index].set_pressed_no_signal(true)
 	if active:
 		for other in slots.size():
 			if other != index and slots[other].button_pressed:
@@ -80,10 +101,43 @@ func _on_slot_toggled(active: bool, index: int) -> void:
 	slot_requested.emit(index)
 	slot_toggled.emit(index, active)
 
+func connect_library(provider: RefCounted) -> void:
+	library = provider
+	library.changed.connect(refresh_bindings)
+	refresh_bindings()
+
+func refresh_bindings() -> void:
+	for i in 6:
+		var item: Dictionary = library.get_template(library.bindings[i])
+		slots[i].preview = item.get("slots",[])
+		if item.is_empty(): slots[i].set_pressed_no_signal(false)
+		slots[i].tooltip_text = item.get("name","Пустой слот")+" · ПКМ — убрать назначение"
+		slots[i].queue_redraw()
+	sync_active()
+
+func sync_active() -> void:
+	if library == null: return
+	var world = get_parent().world
+	var ids := {}
+	for unit in world.rts.selected:
+		var forms = world.rts.orders.formations
+		ids[forms.active.get(forms.key(unit),{}).get("id","")] = true
+	var marked := false
+	for i in 6:
+		if library.bindings[i].is_empty(): continue
+		var active: bool = not marked and ids.size() == 1 and ids.has(library.bindings[i])
+		slots[i].set_pressed_no_signal(active)
+		marked = marked or active
+	if marked:
+		for i in 6:
+			if library.bindings[i].is_empty(): slots[i].set_pressed_no_signal(false)
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	if get_tree().paused: return
 	var world = get_parent().world
 	if world.is_generating or world.developer_tools.visible: return
+	if world.hud.formation_panel.editing: return
+	if get_viewport().gui_get_focus_owner() is LineEdit: return
 	if not event is InputEventKey or event.echo or event.ctrl_pressed or event.alt_pressed or event.meta_pressed: return
 	var code: int = event.physical_keycode if event.physical_keycode != 0 else event.keycode
 	var index := KEYS.find(code)

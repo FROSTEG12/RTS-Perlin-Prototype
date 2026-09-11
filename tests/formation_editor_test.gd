@@ -1,0 +1,163 @@
+extends SceneTree
+const LIB := preload("res://scripts/units/formation_library.gd")
+const OUT := "C:/Users/FROSTEG/Documents/Codex/2026-09-06/new-chat/work/"
+func _initialize() -> void: call_deferred("run")
+func capture(name: String) -> void:
+	if DisplayServer.get_name() == "headless": return
+	for i in 5: await process_frame
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png(OUT+name)
+func run() -> void:
+	var library = LIB.new(OUT+"formations-test-%d.json" % Time.get_ticks_usec())
+	var wedge: Array = []
+	for row in 5:
+		for x in range(-row,row+1,2): wedge.append([x,row-2])
+	var template := {"id":"test_wedge","name":"Клин","slots":wedge,"spacing":1.5,"types":["infantry"]}
+	assert(LIB.validate(template).is_empty())
+	assert(library.save_template(template).is_empty())
+	assert(library.bind_slot(0,"test_wedge"))
+	var restored = LIB.new(library.storage_path)
+	assert(restored.get_template("test_wedge").slots == wedge and restored.bindings[0] == "test_wedge")
+	var invalid := template.duplicate(true)
+	invalid.slots[1] = invalid.slots[0]
+	assert(not LIB.validate(invalid).is_empty())
+	var offsets := LIB.offsets(template)
+	var mean := Vector2.ZERO
+	for point in offsets: mean += point
+	assert(mean.length() < 0.001)
+	var world = load("res://scenes/main.tscn").instantiate()
+	root.add_child(world)
+	if DisplayServer.get_name() != "headless":
+		root.mode = Window.MODE_WINDOWED
+		root.size = Vector2i(1280,720)
+	world.set_process(false)
+	world.game_camera.set_process(false)
+	for unit in world.player_units: unit.set_process(false)
+	var panel = world.hud.formation_panel
+	# Keep all test persistence out of the real player's library.
+	world.hud.formation_library.storage_path = library.storage_path
+	assert(world.hud.formation_library.save_template(template).is_empty())
+	world.hud._set_section(2)
+	panel.edit_template(template)
+	assert(panel.editing and world.game_camera.formation_editing)
+	panel.name_input.grab_focus()
+	var typing := InputEventKey.new()
+	typing.physical_keycode = KEY_Q
+	typing.keycode = KEY_Q
+	typing.unicode = 113
+	typing.pressed = true
+	root.push_input(typing,true)
+	await process_frame
+	assert(not world.hud.skill_slots.slots[0].button_pressed)
+	panel.name_input.text = "Клин"
+	panel.canvas.points = []
+	panel.canvas.mirrored = true
+	panel.canvas.toggle(Vector2i(2,0))
+	assert(panel.canvas.points.size() == 2 and panel.canvas.index_at(Vector2i(-2,0)) >= 0)
+	panel.canvas.toggle(Vector2i(2,0))
+	assert(panel.canvas.points.is_empty())
+	panel.canvas.mirrored = false
+	panel.canvas.points = wedge.duplicate(true)
+	var points_before: Array = panel.canvas.points.duplicate(true)
+	panel.canvas.toggle(Vector2i(5,5))
+	assert(panel.canvas.points == points_before) # full template cannot exceed 15
+	panel.canvas.toggle(Vector2i(0,-2))
+	assert(panel.canvas.points.size() == 14 and panel.save_button.disabled)
+	panel.canvas.toggle(Vector2i(0,-2))
+	assert(panel.canvas.points.size() == 15 and not panel.save_button.disabled)
+	await capture("formation-editor.png")
+	if DisplayServer.get_name() != "headless":
+		root.size = Vector2i(960,540)
+		for i in 8: await process_frame
+		assert(panel.get_global_rect().end.y <= world.hud.size.y)
+		assert(panel.canvas.get_global_rect().end.y < panel.get_global_rect().end.y)
+		await capture("formation-editor-960.png")
+		root.size = Vector2i(1280,720)
+	panel.save_draft()
+	assert(not panel.editing)
+	assert(not world.game_camera.formation_editing)
+	var quick = world.hud.skill_slots.slots[0]
+	assert(quick._can_drop_data(Vector2.ZERO,{"kind":"formation","id":"test_wedge"}))
+	quick._drop_data(Vector2.ZERO,{"kind":"formation","id":"test_wedge"})
+	assert(world.hud.formation_library.bindings[0] == "test_wedge" and quick.preview.size() == 15)
+	world.rts.set_selection([world.lead_unit])
+	var forms = world.rts.orders.formations
+	# Use an all-land test map so formation routing is deterministic, not seed luck.
+	var cells := PackedByteArray()
+	cells.resize(world.current_cells.size())
+	cells.fill(0)
+	world.map_renderer.cells = cells
+	world.pathfinder.setup(cells,world.map_renderer.map_size)
+	print("FORMATION_TEST_READY")
+	var orders = world.rts.orders
+	var anchor: Vector2i = world.map_renderer.world_to_cell(forms.center(world.player_units))
+	anchor = anchor.clamp(Vector2i(25,25),Vector2i(75,75))
+	orders.move(world.player_units,anchor,false)
+	orders.move(world.player_units,anchor+Vector2i(5,5),true)
+	assert(orders.pending.size() == 30)
+	var before: Vector3 = world.lead_unit.position
+	var accepted: bool = forms.apply(world.rts.selected,template)
+	if not accepted:
+		print("FORMATION_INITIAL_REJECT ",forms.last_error)
+	assert(accepted)
+	assert(world.lead_unit.position == before and orders.pending.is_empty())
+	var intents: Array = forms.intentions[forms.key(world.lead_unit)]
+	assert(intents.size() == 3 and intents[-1].goal == anchor+Vector2i(5,5))
+	for i in 6: assert(forms.apply(world.rts.selected,template))
+	assert(forms.intentions[forms.key(world.lead_unit)].size() == 3,"Rapid switches replace the old regrouping stage")
+	for i in 2400:
+		for unit in world.player_units: unit._process(1.0/30.0)
+	for unit in world.player_units: assert(unit.target_positions.is_empty())
+	var expected_distances: Array[float] = []
+	var actual_distances: Array[float] = []
+	for i in 15:
+		for j in range(i+1,15):
+			expected_distances.append(offsets[i].distance_to(offsets[j]))
+			actual_distances.append(world.player_units[i].position.distance_to(world.player_units[j].position))
+	expected_distances.sort()
+	actual_distances.sort()
+	for i in expected_distances.size(): assert(absf(expected_distances[i]-actual_distances[i]) < 0.01,"Exact 1.5 m layout, independent of rotation/assignment")
+	forms.prune()
+	assert(forms.intentions[forms.key(world.lead_unit)].is_empty())
+	var positions: Array = []
+	for unit in world.player_units: positions.append(unit.position)
+	assert(forms.apply(world.rts.selected,template))
+	orders.move(world.player_units,anchor+Vector2i(8,0),false)
+	orders.move(world.player_units,anchor+Vector2i(8,8),true)
+	for i in 20:
+		for unit in world.player_units: unit._process(1.0/30.0)
+	var rectangle: Dictionary = library.get_template("default")
+	assert(forms.apply(world.rts.selected,rectangle))
+	intents = forms.intentions[forms.key(world.lead_unit)]
+	assert(intents[-1].goal == anchor+Vector2i(8,8))
+	var target_before: Array = world.lead_unit.target_positions.duplicate()
+	var blocked := cells.duplicate()
+	blocked.fill(1)
+	world.map_renderer.cells = blocked
+	assert(not forms.apply(world.rts.selected,template))
+	assert(world.lead_unit.target_positions == target_before)
+	world.map_renderer.cells = cells
+	var original_type: String = world.lead_unit.troop_type
+	world.lead_unit.troop_type = "cavalry"
+	assert(not forms.apply(world.rts.selected,template))
+	world.lead_unit.troop_type = original_type
+	assert(world.hud.formation_library.bind_slot(0,"test_wedge"))
+	assert(world.hud.formation_library.bind_slot(1,"default"))
+	world.hud.skill_slots.refresh_bindings()
+	for key_code in [KEY_W,KEY_Q]:
+		for down in [true,false]:
+			var key_event := InputEventKey.new()
+			key_event.physical_keycode = key_code
+			key_event.pressed = down
+			root.push_input(key_event,true)
+			await process_frame
+	assert(world.hud.skill_slots.slots[0].button_pressed)
+	assert(not world.hud.skill_slots.slots[1].button_pressed)
+	world.hud._set_section(-1)
+	world.game_camera.focus_on(forms.center(world.player_units))
+	world.game_camera.size = 18
+	await capture("formation-applied.png")
+	world.rts.orders.stop(world.player_units)
+	assert(forms.intentions.is_empty())
+	print("FORMATION_EDITOR_PASS persistence validation 15_slots centered spacing apply types quickslot moving_queue no_teleport reject_atomic stop")
+	quit()

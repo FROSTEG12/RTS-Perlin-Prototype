@@ -7,6 +7,10 @@ const FORMATION := preload("res://scripts/units/squad_formation.gd")
 const CONTROL_GROUPS := preload("res://scripts/units/unit_control_groups.gd")
 var pending: Array[Dictionary] = []
 var world: Node3D
+var formations = preload("res://scripts/input/formation_orders.gd").new()
+
+func _ready() -> void:
+	formations.dispatcher = self
 
 
 func move(units: Array, cell: Vector2i, queued: bool) -> void:
@@ -15,6 +19,9 @@ func move(units: Array, cell: Vector2i, queued: bool) -> void:
 		result_received.emit(false, point, "Здесь нельзя пройти")
 		return
 	var valid_units := CONTROL_GROUPS.expand(units, world.rts.units())
+	if valid_units.any(func(unit): return formations.active.has(formations.key(unit))):
+		if not formations.move(valid_units,cell,queued): result_received.emit(false,point,formations.last_error)
+		return
 	var targets := FORMATION.find_cells(world.map_renderer, cell, valid_units.size())
 	if targets.is_empty():
 		result_received.emit(false, point, "Не хватает места для строя")
@@ -30,9 +37,14 @@ func move(units: Array, cell: Vector2i, queued: bool) -> void:
 		var target: Vector2i = targets[index]
 		pending.append({"unit": unit, "revision": unit.order_revision,
 			"target": target, "queued": queued})
+	for group in formations.groups(valid_units):
+		var ends := {}
+		for unit in group: ends[unit] = targets[valid_units.find(unit)]
+		formations.record(group,cell,ends,queued)
 
 
 func stop(units: Array) -> void:
+	formations.clear(units)
 	var controlled := CONTROL_GROUPS.expand(units, world.rts.units())
 	for unit: Unit3D in controlled:
 		if is_instance_valid(unit):
@@ -42,9 +54,11 @@ func stop(units: Array) -> void:
 
 func reset() -> void:
 	pending.clear()
+	formations.reset()
 
 
 func _process(_delta: float) -> void:
+	formations.prune()
 	for index in mini(PATHS_PER_FRAME, pending.size()):
 		var job: Dictionary = pending.pop_front()
 		var unit = job.unit

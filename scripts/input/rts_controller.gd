@@ -134,6 +134,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if world.hud != null and world.hud.formation_panel.editing: return
 	if world.is_generating or world.developer_tools.visible:
 		return
 	if event is InputEventMouseButton and over_ui(event.position):
@@ -301,6 +302,7 @@ func _feedback(ok: bool, point: Vector3, message: String) -> void:
 
 
 func _update_status() -> void:
+	if world.hud != null: world.hud.skill_slots.sync_active()
 	if status == null:
 		return
 	status.text = "Выделено бойцов: %d" % selected.size() if not selected.is_empty() else "Выбери отряд левой кнопкой"

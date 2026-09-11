@@ -7,6 +7,7 @@ var grid_cell := Vector2i.ZERO
 var move_speed := MOVE_SPEED
 var display_name := "Рыцарь"
 var squad_id := 0
+var troop_type := "infantry"
 var individual_control := false # Opt in only for designated special units.
 var target_cells: Array[Vector2i] = []
 var target_positions: Array[Vector3] = []
@@ -53,10 +54,10 @@ func order_anchor(renderer: MapRenderer3D, queued: bool) -> Vector2i:
 	return renderer.world_to_cell(global_position)
 
 
-func accept_move(path: Array[Vector2i], renderer: MapRenderer3D, queued: bool) -> bool:
+func accept_move(path: Array[Vector2i], renderer: MapRenderer3D, queued: bool, endpoint: Vector3 = Vector3.INF) -> bool:
 	if path.is_empty() or (queued and move_orders.size() >= 32):
 		return false
-	if queued and not move_orders.is_empty() and move_orders.back() == path.back():
+	if not endpoint.is_finite() and queued and not move_orders.is_empty() and move_orders.back() == path.back():
 		return true
 	if queued and not target_cells.is_empty():
 		for index in range(1, path.size()):
@@ -64,6 +65,13 @@ func accept_move(path: Array[Vector2i], renderer: MapRenderer3D, queued: bool) -
 			target_positions.append(renderer.cell_to_world(path[index].x, path[index].y))
 	else:
 		follow_path(path, renderer)
+	if endpoint.is_finite():
+		# Navigation stays on the land grid; only the final within-cell position is exact.
+		if target_cells.is_empty() or (queued and path.size() == 1):
+			if position.distance_squared_to(endpoint) > 0.0001 or not target_cells.is_empty():
+				target_cells.append(path.back())
+				target_positions.append(endpoint)
+		else: target_positions[-1] = endpoint
 	if not target_cells.is_empty():
 		move_orders.append(path.back())
 
