@@ -195,7 +195,7 @@ func install(plan: Dictionary, queued: bool) -> void:
 		dispatcher.pending = dispatcher.pending.filter(func(job): return job.unit not in group)
 	var append := queued
 	var id := key(group[0])
-	pace.begin(id,group,queued)
+	pace.begin(id,group,queued,plan.stages[0].get("transient",false))
 	for stage in plan.stages:
 		var ends := {}
 		var lengths := {}

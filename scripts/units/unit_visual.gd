@@ -94,7 +94,8 @@ func set_model(scene: PackedScene) -> void:
 
 func set_motion(velocity: Vector3, delta: float) -> void:
 	var moving := velocity.length_squared() > 0.0001
-	var clip := ("walk" if velocity.length() < 1.6 and player.has_animation("walk") else "jog") if moving else "idle"
+	var walk_threshold := 1.75 if player.current_animation == "walk" else 1.6
+	var clip := ("walk" if velocity.length() < walk_threshold and player.has_animation("walk") else "jog") if moving else "idle"
 	if player.current_animation != clip:
 		player.play(clip, 0.16)
 		player.seek(animation_phase * player.get_animation(clip).length, false)

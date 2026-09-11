@@ -153,7 +153,7 @@ func run() -> void:
 	for i in 6: assert(forms.apply(world.rts.selected,template))
 	assert(forms.intentions[forms.key(world.lead_unit)].size() == 3,"Rapid switches replace the old regrouping stage")
 	for i in 2400:
-		forms.pace.update()
+		forms.pace.update(1.0/30.0)
 		for unit in world.player_units: unit._process(1.0/30.0)
 	for unit in world.player_units: assert(unit.target_positions.is_empty())
 	var expected_distances: Array[float] = []
@@ -173,7 +173,7 @@ func run() -> void:
 	orders.move(world.player_units,anchor+Vector2i(8,0),false)
 	orders.move(world.player_units,anchor+Vector2i(8,8),true)
 	for i in 20:
-		forms.pace.update()
+		forms.pace.update(1.0/30.0)
 		for unit in world.player_units: unit._process(1.0/30.0)
 	var rectangle: Dictionary = library.get_template("default")
 	assert(forms.apply(world.rts.selected,rectangle))
