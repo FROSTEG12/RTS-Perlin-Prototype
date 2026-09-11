@@ -56,8 +56,12 @@ func run() -> void:
 	world.hud._open_section(0)
 	assert(world.hud.buildings.visible)
 	world.hud._open_section(2)
-	assert(not world.hud.buildings.visible and world.hud.formation_panel.visible)
+	assert(world.hud.buildings.visible and world.hud.formation_panel.visible)
 	world.hud._open_section(2)
+	assert(world.hud.formation_panel.visible)
+	world.hud.formation_panel.close_button.pressed.emit()
+	world.hud.formation_library.bindings = ["","","","","",""]
+	world.hud.skill_slots.refresh_bindings()
 	world.hud.dock.buttons[1].pressed.emit()
 	assert(world.hud.armies.visible)
 	assert(world.hud.dock.buttons[1].tooltip_text == "Армии")
@@ -103,7 +107,7 @@ func run() -> void:
 		for slot in world.hud.skill_slots.slots:
 			assert(is_equal_approx(slot.size.x, slot.size.y) and slot.size.x >= 48 and slot.size.x <= 64)
 			if dimensions.x >= 1280: assert(slot.size == Vector2(64, 64))
-		assert(world.hud.skill_slots.get_global_rect().end.x <= world.hud.dock.global_position.x - 24)
+		assert(world.hud.skill_slots.get_global_rect().end.x <= world.hud.dock.global_position.x - 8)
 		await gui_click(world.hud.skill_slots.slots[0])
 		assert(world.rts.selected.size() == 15)
 		# Click the same world destination through the resized map's actual GUI.

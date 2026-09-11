@@ -55,7 +55,7 @@ func run() -> void:
 	assert(panel.find_children("*","HSlider",true,false).is_empty())
 	assert(panel.find_children("*","CheckBox",true,false).is_empty())
 	panel.edit_template(template)
-	assert(panel.editing and world.game_camera.formation_editing)
+	assert(panel.editing and not world.game_camera.controls_blocked)
 	panel.name_input.grab_focus()
 	var typing := InputEventKey.new()
 	typing.physical_keycode = KEY_Q
@@ -92,11 +92,14 @@ func run() -> void:
 	panel.save_draft()
 	var saved: Dictionary = world.hud.formation_library.get_template("test_wedge")
 	assert(saved.spacing == 1.5 and saved.types == ["infantry"],"Removing metadata controls must not change existing templates")
-	assert(not panel.editing)
-	assert(not world.game_camera.formation_editing)
+	assert(panel.editing and panel.visible,"Save must not close a floating editor")
+	panel.close_button.pressed.emit()
+	world.hud.open_inventory()
 	for i in 8: await process_frame
-	var inventory_card = panel.list_rows.get_child(panel.list_rows.get_child_count()-1)
-	panel.list_rows.get_parent().ensure_control_visible(inventory_card)
+	var inventory = world.hud.formation_inventory
+	await check_floating_windows(world)
+	var inventory_card = inventory.list_rows.get_child(inventory.list_rows.get_child_count()-1)
+	inventory.list_rows.get_parent().ensure_control_visible(inventory_card)
 	for i in 4: await process_frame
 	world.rts.set_selection([world.lead_unit])
 	var revision: int = world.lead_unit.order_revision
@@ -150,6 +153,7 @@ func run() -> void:
 	for i in 6: assert(forms.apply(world.rts.selected,template))
 	assert(forms.intentions[forms.key(world.lead_unit)].size() == 3,"Rapid switches replace the old regrouping stage")
 	for i in 2400:
+		forms.pace.update()
 		for unit in world.player_units: unit._process(1.0/30.0)
 	for unit in world.player_units: assert(unit.target_positions.is_empty())
 	var expected_distances: Array[float] = []
@@ -169,6 +173,7 @@ func run() -> void:
 	orders.move(world.player_units,anchor+Vector2i(8,0),false)
 	orders.move(world.player_units,anchor+Vector2i(8,8),true)
 	for i in 20:
+		forms.pace.update()
 		for unit in world.player_units: unit._process(1.0/30.0)
 	var rectangle: Dictionary = library.get_template("default")
 	assert(forms.apply(world.rts.selected,rectangle))
@@ -205,3 +210,98 @@ func run() -> void:
 	assert(forms.intentions.is_empty())
 	print("FORMATION_EDITOR_PASS persistence validation 15_slots centered spacing apply types quickslot moving_queue no_teleport reject_atomic stop")
 	quit()
+
+func check_floating_windows(world: Node) -> void:
+	var hud = world.hud
+	var editor = hud.formation_panel
+	var inventory = hud.formation_inventory
+	assert(hud.skill_slots.inventory_button.get_global_rect().end.x < hud.skill_slots.slots[0].global_position.x)
+	for button in inventory.find_children("*","Button",true,false):
+		assert(not "Создать" in button.text)
+	hud._open_section(2)
+	editor.name_input.text = "Несохранённый черновик"
+	editor.canvas.points = [[0,0],[1,0]]
+	hud._open_section(2)
+	hud._open_section(1)
+	hud._open_section(0)
+	hud._set_section(-1)
+	hud.skill_slots.inventory_button.pressed.emit()
+	hud.skill_slots.inventory_button.pressed.emit()
+	assert(editor.visible and inventory.visible and editor.canvas.points.size() == 2)
+	assert(editor.name_input.text == "Несохранённый черновик")
+	for label in editor.find_children("*","Label",true,false):
+		assert(not "конкретные" in label.text and not "Клик —" in label.text)
+	if DisplayServer.get_name() != "headless":
+		for window in [inventory,editor]:
+			window.bring_forward()
+			for i in 3: await process_frame
+			var previous: Vector2 = window.position
+			var source: Vector2 = window.header.global_position+Vector2(60,16)
+			var delta := Vector2(35,20)
+			root.warp_mouse(source)
+			mouse_button(source,true)
+			mouse_motion(source+delta,delta)
+			mouse_button(source+delta,false)
+			await process_frame
+			assert(window.position.distance_to(previous+delta)<1,"Window header must drag")
+			var moved: Vector2 = window.position
+			hud._layout_hud()
+			assert(window.position == moved,"HUD layout must preserve window position")
+	# Outside input remains available; inside clicks cannot create a selection box.
+	var empty_point := Vector2(12,140)
+	assert(not hud.contains(empty_point))
+	mouse_button(empty_point,true)
+	assert(world.rts.selecting)
+	mouse_button(empty_point,false)
+	assert(editor.visible and inventory.visible)
+	var bindings: Array = hud.formation_library.bindings.duplicate()
+	hud.formation_library.bindings = ["","","","","",""]
+	hud.skill_slots.refresh_bindings()
+	var hotkey := InputEventKey.new()
+	hotkey.physical_keycode = KEY_R
+	hotkey.pressed = true
+	root.push_input(hotkey,true)
+	assert(hud.skill_slots.slots[5].button_pressed,"Hotkeys must work while editor is open")
+	hotkey.pressed = false
+	root.push_input(hotkey,true)
+	hud.formation_library.bindings = bindings
+	hud.skill_slots.refresh_bindings()
+	var zoom_before: float = world.game_camera.size
+	var wheel := InputEventMouseButton.new()
+	wheel.button_index = MOUSE_BUTTON_WHEEL_UP
+	wheel.pressed = true
+	wheel.position = empty_point
+	root.warp_mouse(empty_point)
+	mouse_motion(empty_point,Vector2.ZERO)
+	world.game_camera.window_focused = true
+	root.push_input(wheel,true)
+	assert(world.game_camera.size < zoom_before,"Camera must work outside floating windows")
+	editor.bring_forward()
+	mouse_button(editor.global_position+Vector2(4,70),true)
+	assert(not world.rts.selecting)
+	mouse_button(editor.global_position+Vector2(4,70),false)
+	zoom_before = world.game_camera.size
+	wheel.position = editor.global_position+Vector2(4,70)
+	root.warp_mouse(wheel.position)
+	mouse_motion(wheel.position,Vector2.ZERO)
+	root.push_input(wheel,true)
+	assert(world.game_camera.size == zoom_before,"Window blocks wheel input to world")
+	hud._open_section(1)
+	hud.armies._layout()
+	assert(absf(hud.armies.add_button.get_global_rect().end.y-hud.dock.global_position.y+8)<1)
+	hud._set_section(-1)
+	world.pause_menu.set_open(true)
+	world.pause_menu.set_open(false)
+	assert(editor.visible and inventory.visible)
+	var escape := InputEventKey.new()
+	escape.keycode = KEY_ESCAPE
+	escape.pressed = true
+	root.push_input(escape,true)
+	assert(editor.visible and inventory.visible)
+	world.pause_menu.set_open(false)
+	editor.close_button.pressed.emit()
+	assert(not editor.visible and inventory.visible)
+	inventory.close_button.pressed.emit()
+	assert(not inventory.visible)
+	hud.open_inventory()
+	print("FLOATING_WINDOWS_PASS independent persistent non_modal drag close no_clickthrough")

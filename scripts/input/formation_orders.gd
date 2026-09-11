@@ -7,6 +7,7 @@ var active := {}
 var intentions := {}
 var facing := {}
 var last_error := ""
+var pace = preload("res://scripts/input/formation_pace.gd").new()
 
 func key(unit: Unit3D) -> String:
 	return "unit:%d" % unit.get_instance_id() if unit.individual_control else "squad:%d" % unit.squad_id
@@ -45,9 +46,12 @@ func prune() -> void:
 			intentions[id].pop_front()
 
 func clear(units: Array) -> void:
-	for group in groups(units): intentions.erase(key(group[0]))
+	for group in groups(units):
+		intentions.erase(key(group[0]))
+		pace.clear(key(group[0]))
 
 func reset() -> void:
+	pace.reset()
 	active.clear()
 	intentions.clear()
 	facing.clear()
@@ -187,10 +191,23 @@ func install(plan: Dictionary, queued: bool) -> void:
 		for unit in group: unit.order_revision += 1
 		dispatcher.pending = dispatcher.pending.filter(func(job): return job.unit not in group)
 	var append := queued
+	var id := key(group[0])
+	pace.begin(id,group,queued)
 	for stage in plan.stages:
 		var ends := {}
+		var lengths := {}
 		for job in stage.jobs:
+			var unit: Unit3D = job.unit
+			var count := unit.target_positions.size() if append else 0
+			var previous: Vector3 = unit.target_positions.back() if count > 0 else unit.position
 			job.unit.accept_move(job.path,dispatcher.world.map_renderer,append,job.point)
+			var length := 0.0
+			for index in range(count,unit.target_positions.size()):
+				length += previous.distance_to(unit.target_positions[index])
+				previous = unit.target_positions[index]
+			lengths[unit] = length
 			ends[job.unit] = job.target
+		pace.add_stage(id,lengths)
 		record(group,stage.goal,ends,append,stage.get("transient",false))
 		append = true
+	pace.update()

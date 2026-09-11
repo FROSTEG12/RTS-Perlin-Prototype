@@ -7,14 +7,14 @@ var active_section := -1
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_PASS
 	add_theme_constant_override("separation", 6)
-	var names := ["Постройки", "Армии", "Построения"]
+	var names := ["Постройки", "Армии", "Создать построение"]
 	var icons := ["buildings", "armies", "formations"]
 	for i in names.size():
 		var item := preload("res://scripts/ui/menu_medallion.gd").new()
 		item.name = ["Buildings", "Armies", "Formations"][i]
 		item.tooltip_text = names[i]
 		item.focus_mode = Control.FOCUS_NONE
-		item.toggle_mode = true
+		item.toggle_mode = i != 2
 		item.custom_minimum_size = Vector2(56, 56)
 		item.glyph = load("res://assets/ui/generated_navigation/" + icons[i] + ".png")
 		item.pressed.connect(func(): section_requested.emit(i))

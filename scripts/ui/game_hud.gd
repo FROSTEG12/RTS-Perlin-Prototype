@@ -15,8 +15,8 @@ var skill_slots: PanelContainer
 var active_section := -1
 var status_panel: PanelContainer
 var formation_panel: PanelContainer
+var formation_inventory: PanelContainer
 var formation_library = preload("res://scripts/units/formation_library.gd").new()
-var formation_scrim: ColorRect
 var daylight: Control
 var navigation_buttons: Array[Button] = []
 var menu_button: Button
@@ -176,11 +176,10 @@ func _ready() -> void:
 	minimap = preload("res://scripts/ui/minimap.gd").new()
 	minimap.world = world
 	add_child(minimap)
-	formation_scrim = ColorRect.new()
-	formation_scrim.color = Color(0.01,0.02,0.03,0.5)
-	formation_scrim.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
-	add_child(formation_scrim)
-	formation_scrim.hide()
+	formation_inventory = preload("res://scripts/ui/formation_inventory.gd").new()
+	formation_inventory.world = world
+	formation_inventory.library = formation_library
+	add_child(formation_inventory)
 	move_child(formation_panel,-1)
 	_update()
 	resized.connect(_schedule_layout)
@@ -224,7 +223,7 @@ func _layout_hud() -> void:
 	_place(minimap, size - Vector2.ONE * (map_side + EDGE), Vector2.ONE * map_side)
 	var dock_width := dock.get_combined_minimum_size().x
 	_place(dock, Vector2((size.x - dock_width) * 0.5, size.y - 6 - 56), Vector2(dock_width, 56))
-	var skill_gap := 64.0 if size.x >= 1100 else 24.0
+	var skill_gap := 64.0 if size.x >= 1100 else 8.0
 	var skill_extent: Vector2 = skill_slots.fit_width(dock.position.x - skill_gap - EDGE)
 	_place(skill_slots, Vector2(dock.position.x - skill_gap - skill_extent.x, size.y - 6 - skill_extent.y), skill_extent)
 	# Panels grow upwards from one baseline. On narrow screens only the panel
@@ -241,12 +240,9 @@ func _layout_hud() -> void:
 	var army_x := clampf((size.x - army_width) * 0.5, EDGE, panel_right - army_width)
 	_place(armies, Vector2(army_x, panel_bottom - army_height), Vector2(army_width, army_height))
 	armies._layout()
-	var formation_width := minf(size.x-20,760.0) if formation_panel.editing else 500.0
-	var formation_height := minf(size.y-100,520.0) if formation_panel.editing else 310.0
-	formation_height = maxf(formation_height,formation_panel.get_combined_minimum_size().y)
-	var formation_x := (size.x-formation_width)*0.5 if formation_panel.editing else clampf((size.x-formation_width)*0.5,EDGE,panel_right-formation_width)
-	var formation_y := (size.y-formation_height)*0.5 if formation_panel.editing else panel_bottom-formation_height
-	_place(formation_panel, Vector2(formation_x,formation_y), Vector2(formation_width,formation_height))
+	formation_panel.size = Vector2(minf(size.x-20,760),minf(size.y-40,520))
+	formation_panel.clamp_to_screen()
+	formation_inventory.clamp_to_screen()
 	minimap.queue_redraw()
 
 func _top_divider(parent: Node) -> void:
@@ -270,16 +266,23 @@ func _section_panel(title: String) -> PanelContainer:
 	return section
 
 func _open_section(index: int) -> void:
+	if index == 2:
+		formation_panel.open()
+		return
 	_set_section(-1 if active_section == index else index)
 
 func _set_section(index: int) -> void:
-	if index != 2 and formation_panel.editing: formation_panel.close_editor()
+	if index == 2:
+		formation_panel.open()
+		return
 	active_section = index
 	buildings.visible = index == 0
 	armies.visible = index == 1
-	formation_panel.visible = index == 2
 	dock.set_active(index)
 	_schedule_layout()
+
+func open_inventory() -> void:
+	formation_inventory.open()
 
 func _process(delta: float) -> void:
 	# Read every frame so the marker also moves smoothly at accelerated game time.
@@ -302,10 +305,9 @@ func _update() -> void:
 		resource_labels[key].tooltip_text = "%s: %s" % [key, world.stockpile[key]]
 
 func contains(point: Vector2) -> bool:
-	if formation_panel.editing: return true
 	if dock.contains(point): return true
 	if buildings.contains(point): return true
 	if armies.contains(point): return true
-	for panel in [top, status_panel, menu_button, formation_panel, minimap, skill_slots]:
+	for panel in [top, status_panel, menu_button, formation_panel, formation_inventory, minimap, skill_slots]:
 		if panel.is_visible_in_tree() and panel.get_global_rect().has_point(point): return true
 	return false

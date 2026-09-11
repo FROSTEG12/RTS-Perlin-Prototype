@@ -1,12 +1,9 @@
-extends PanelContainer
+extends "res://scripts/ui/floating_panel.gd"
 const LIBRARY := preload("res://scripts/units/formation_library.gd")
-var world: Node3D
 var library: RefCounted
 var editing := false
 var draft_id := ""
 var rows: VBoxContainer
-var list_view: VBoxContainer
-var list_rows: GridContainer
 var editor_view: HBoxContainer
 var canvas: Control
 var name_input: LineEdit
@@ -29,36 +26,11 @@ func _ready() -> void:
 	rows = VBoxContainer.new()
 	rows.add_theme_constant_override("separation",8)
 	add_child(rows)
-	var header := HBoxContainer.new()
-	rows.add_child(header)
 	var title := Label.new()
 	heading = title
-	title.text = "ПОСТРОЕНИЯ"
+	title.text = "СОЗДАНИЕ ПОСТРОЕНИЯ"
 	title.add_theme_font_size_override("font_size",18)
-	title.size_flags_horizontal = SIZE_EXPAND_FILL
-	header.add_child(title)
-	make_button("Закрыть",header,func(): close_editor(); world.hud._set_section(-1))
-	list_view = VBoxContainer.new()
-	list_view.size_flags_vertical = SIZE_EXPAND_FILL
-	rows.add_child(list_view)
-	var help := Label.new()
-	help.text = "Инвентарь навыков · перетащи построение на быстрый слот"
-	help.add_theme_font_size_override("font_size",12)
-	list_view.add_child(help)
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	list_view.add_child(scroll)
-	list_rows = GridContainer.new()
-	list_rows.columns = 4
-	list_rows.add_theme_constant_override("h_separation",10)
-	list_rows.add_theme_constant_override("v_separation",10)
-	list_rows.size_flags_horizontal = SIZE_EXPAND_FILL
-	scroll.add_child(list_rows)
-	var footer := HBoxContainer.new()
-	footer.alignment = BoxContainer.ALIGNMENT_END
-	list_view.add_child(footer)
-	make_button("+ Создать построение",footer,func(): edit_template({}))
+	setup_header(title,rows,close_editor)
 	editor_view = HBoxContainer.new()
 	editor_view.add_theme_constant_override("separation",14)
 	editor_view.size_flags_vertical = SIZE_EXPAND_FILL
@@ -94,19 +66,11 @@ func _ready() -> void:
 	symmetry.toggled.connect(func(value): canvas.mirrored = value)
 	tools.add_child(symmetry)
 	save_button = make_button("Сохранить",controls,save_draft)
-	make_button("Отмена",controls,close_editor)
-	var hint := Label.new()
-	hint.text = "Клик — добавить / убрать\nПеретаскивание — переместить\nКрест — средний центр отряда"
-	hint.add_theme_font_size_override("font_size",12)
-	controls.add_child(hint)
 	message = Label.new()
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	message.add_theme_font_size_override("font_size",12)
-	message.custom_minimum_size.y = 30
+	message.hide()
 	rows.add_child(message)
-	library.changed.connect(refresh_list)
-	editor_view.hide()
-	refresh_list()
 
 func make_button(text: String, parent: Node, action: Callable) -> Button:
 	var result := Button.new()
@@ -116,19 +80,11 @@ func make_button(text: String, parent: Node, action: Callable) -> Button:
 	parent.add_child(result)
 	return result
 
-func refresh_list() -> void:
-	for child in list_rows.get_children():
-		list_rows.remove_child(child)
-		child.queue_free()
-	var selection := ButtonGroup.new()
-	for template in library.templates:
-		var item := preload("res://scripts/ui/formation_list_button.gd").new()
-		item.template = template
-		item.button_group = selection
-		item.edit_requested.connect(func(): edit_template(template))
-		item.pressed.connect(func(): message.text = template.name+" · перетащи на быстрый слот. ПКМ — изменить.")
-		list_rows.add_child(item)
-	if library.load_error: message.text = "Файл построений повреждён: запись заблокирована для сохранности данных."
+func open() -> void:
+	if not editing: edit_template({})
+	else:
+		show()
+		bring_forward()
 
 func edit_template(template: Dictionary) -> void:
 	editing = true
@@ -139,11 +95,15 @@ func edit_template(template: Dictionary) -> void:
 	# Metadata stays compatible with saved formations; these are no longer UI options.
 	draft_spacing = template.get("spacing",1.0)
 	draft_types = template.get("types",LIBRARY.TYPES).duplicate()
-	list_view.hide()
-	editor_view.show()
-	message.text = "15 слотов — позиции, а не конкретные солдаты."
-	world.game_camera.formation_editing = true
-	world.hud.formation_scrim.show()
+	message.text = ""
+	message.hide()
+	show()
+	bring_forward()
+	if not positioned:
+		size = Vector2(minf(world.hud.size.x-20,760),minf(world.hud.size.y-40,520))
+		position = (world.hud.size-size)*0.5
+		positioned = true
+	clamp_to_screen()
 	world.game_camera.dragging = false
 	world.rts.cancel_drag()
 	update_count()
@@ -152,13 +112,8 @@ func edit_template(template: Dictionary) -> void:
 
 func close_editor() -> void:
 	editing = false
-	heading.text = "ПОСТРОЕНИЯ"
-	world.game_camera.formation_editing = false
-	world.hud.formation_scrim.hide()
 	name_input.release_focus()
-	editor_view.hide()
-	list_view.show()
-	world.hud._schedule_layout()
+	hide()
 
 func update_count() -> void:
 	count_label.text = "Мест: %d / 15" % canvas.points.size()
@@ -168,13 +123,17 @@ func save_draft() -> void:
 	var error: String = library.save_template({"id":draft_id,"name":name_input.text,"slots":canvas.points.duplicate(true),"spacing":draft_spacing,"types":draft_types.duplicate()})
 	if not error.is_empty():
 		message.text = error
+		message.show()
 		return
-	close_editor()
-	message.text = "«%s» добавлено в инвентарь навыков. Перетащи карточку на Q/W/E/D/F/R." % name_input.text
+	# Keep the editor and draft open; subsequent saves update this same skill.
+	if draft_id.is_empty() or draft_id == "default": draft_id = library.templates.back().id
+	message.text = "Сохранено"
+	message.show()
+	name_input.release_focus()
 
 func apply_template(template: Dictionary) -> bool:
 	var formations = world.rts.orders.formations
 	var accepted: bool = formations.apply(world.rts.selected,template)
-	message.text = "Построение: "+template.name if accepted else formations.last_error
+	world.hud.formation_inventory.message.text = "Построение: "+template.name if accepted else formations.last_error
 	world.hud.skill_slots.sync_active()
 	return accepted

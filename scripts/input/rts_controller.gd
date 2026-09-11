@@ -134,7 +134,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if world.hud != null and world.hud.formation_panel.editing: return
+	if event is InputEventKey and get_viewport().gui_get_focus_owner() is LineEdit: return
 	if world.is_generating or world.developer_tools.visible:
 		return
 	if event is InputEventMouseButton and over_ui(event.position):

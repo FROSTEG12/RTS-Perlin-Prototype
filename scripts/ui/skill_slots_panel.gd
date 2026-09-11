@@ -9,6 +9,7 @@ const SLOT_GAP := 6.0
 var slots: Array[Button] = []
 var last_requested := -1
 var library: RefCounted
+var inventory_button: Button
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -26,6 +27,12 @@ func _ready() -> void:
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_theme_constant_override("separation", 6)
 	add_child(row)
+	inventory_button = preload("res://scripts/ui/inventory_open_button.gd").new()
+	inventory_button.custom_minimum_size = Vector2(28,SLOT_SIZE)
+	inventory_button.focus_mode = FOCUS_NONE
+	inventory_button.tooltip_text = "Инвентарь навыков"
+	inventory_button.pressed.connect(func(): get_parent().open_inventory())
+	row.add_child(inventory_button)
 	for i in 6:
 		var slot := preload("res://scripts/ui/formation_quick_button.gd").new()
 		slot.name = "SkillSlot%d" % (i + 1)
@@ -70,17 +77,15 @@ func _ready() -> void:
 		slots.append(slot)
 
 func fit_width(available: float) -> Vector2:
-	var side := clampf(floorf((available - 20 - SLOT_GAP * 5) / 6), 48, SLOT_SIZE)
+	var side := clampf(floorf((available - 20 - 34 - SLOT_GAP * 5) / 6), 48, SLOT_SIZE)
 	for slot in slots: slot.custom_minimum_size = Vector2.ONE * side
-	return Vector2(side * 6 + SLOT_GAP * 5 + 20, side + 20)
+	inventory_button.custom_minimum_size = Vector2(28,side)
+	return Vector2(side * 6 + SLOT_GAP * 5 + 20 + 34, side + 20)
 
 func request_slot(index: int) -> void:
 	slots[index].button_pressed = not slots[index].button_pressed
 
 func _on_slot_toggled(active: bool, index: int) -> void:
-	if library != null and get_parent().formation_panel.editing:
-		slots[index].set_pressed_no_signal(not active)
-		return
 	if library != null and not library.bindings[index].is_empty():
 		var panel = get_parent().formation_panel
 		if not active:
@@ -89,7 +94,7 @@ func _on_slot_toggled(active: bool, index: int) -> void:
 		if not panel.apply_template(library.get_template(library.bindings[index])):
 			slots[index].set_pressed_no_signal(false)
 			sync_active()
-			get_parent()._set_section(2)
+			get_parent().open_inventory()
 			return
 		slots[index].set_pressed_no_signal(true)
 	if active:
@@ -136,7 +141,6 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if get_tree().paused: return
 	var world = get_parent().world
 	if world.is_generating or world.developer_tools.visible: return
-	if world.hud.formation_panel.editing: return
 	if get_viewport().gui_get_focus_owner() is LineEdit: return
 	if not event is InputEventKey or event.echo or event.ctrl_pressed or event.alt_pressed or event.meta_pressed: return
 	var code: int = event.physical_keycode if event.physical_keycode != 0 else event.keycode

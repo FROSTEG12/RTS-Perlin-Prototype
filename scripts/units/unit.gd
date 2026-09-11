@@ -5,6 +5,8 @@ const MOVE_SPEED := 2.25
 
 var grid_cell := Vector2i.ZERO
 var move_speed := MOVE_SPEED
+var formation_speed_scale := 1.0
+var travelled_distance := 0.0
 var display_name := "Рыцарь"
 var squad_id := 0
 var troop_type := "infantry"
@@ -79,6 +81,7 @@ func accept_move(path: Array[Vector2i], renderer: MapRenderer3D, queued: bool, e
 
 
 func stop_orders(renderer: MapRenderer3D) -> void:
+	formation_speed_scale = 1.0
 	order_revision += 1
 	target_cells.clear()
 	target_positions.clear()
@@ -89,6 +92,7 @@ func stop_orders(renderer: MapRenderer3D) -> void:
 
 
 func place_on_cell(cell: Vector2i, world_position: Vector3) -> void:
+	formation_speed_scale = 1.0
 	order_revision += 1
 	move_orders.clear()
 
@@ -127,6 +131,7 @@ func nearest_route_cell(renderer: MapRenderer3D) -> Vector2i:
 
 
 func cancel_movement(renderer: MapRenderer3D) -> void:
+	formation_speed_scale = 1.0
 	order_revision += 1
 	move_orders.clear()
 
@@ -148,10 +153,11 @@ func _process(delta: float) -> void:
 		return
 	var before := global_position
 	var local_before := position
-	var remaining := move_speed * delta
+	var remaining := move_speed * formation_speed_scale * delta
 	while remaining > 0.0 and not target_positions.is_empty():
 		var distance := position.distance_to(target_positions[0])
 		var next := position.move_toward(target_positions[0], remaining)
+		travelled_distance += position.distance_to(next)
 		position = next
 		remaining -= distance
 		if position.distance_squared_to(target_positions[0]) > 0.0001:

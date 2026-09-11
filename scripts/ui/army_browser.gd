@@ -202,6 +202,8 @@ func _layout() -> void:
 		squad_cards[i].position = Vector2(left + i * (tile.x+8), lower_y)
 	var add_x := left + row_width + 8.0 if not squads.is_empty() else (size.x - 72.0) * 0.5
 	add_button.position = Vector2(add_x, lower_y + (tile.y-72)/2)
+	if squads.is_empty():
+		add_button.position.y = world.hud.dock.position.y-global_position.y-72-8
 	add_button.size = Vector2(72,72)
 	_place_details()
 

@@ -11,7 +11,6 @@ const EDGE_SPEED := 0.65 # Visible camera heights per second, independent of zoo
 var dragging := false
 var map_half_extent := 52.0
 var controls_blocked := false
-var formation_editing := false
 var window_focused := true
 
 
@@ -25,7 +24,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
 		dragging = false
-	if controls_blocked or formation_editing or not window_focused:
+	if controls_blocked or not window_focused:
 		dragging = false
 	elif not dragging and get_window().has_focus() and not get_tree().paused:
 		# Never scroll behind interactive UI, or after the pointer leaves the window.
@@ -61,7 +60,7 @@ func _notification(what: int) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if controls_blocked or formation_editing or not window_focused or get_tree().paused:
+	if controls_blocked or not window_focused or get_tree().paused:
 		return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_MIDDLE:

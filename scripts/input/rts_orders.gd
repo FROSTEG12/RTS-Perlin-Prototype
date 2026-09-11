@@ -58,6 +58,7 @@ func reset() -> void:
 
 
 func _process(_delta: float) -> void:
+	formations.pace.update()
 	formations.prune()
 	for index in mini(PATHS_PER_FRAME, pending.size()):
 		var job: Dictionary = pending.pop_front()
