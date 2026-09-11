@@ -13,18 +13,13 @@ var count_label: Label
 var message: Label
 var save_button: Button
 var heading: Label
+var skill_preview: Control
 
 func _ready() -> void:
 	mouse_filter = MOUSE_FILTER_STOP
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color("#0c1720f5")
-	style.border_color = Color("#718d9e")
-	style.set_border_width_all(1)
-	style.set_corner_radius_all(4)
-	for edge in ["left","right","top","bottom"]: style.set("content_margin_"+edge,14)
-	add_theme_stylebox_override("panel",style)
+	add_theme_stylebox_override("panel",WINDOW_STYLE.window(18))
 	rows = VBoxContainer.new()
-	rows.add_theme_constant_override("separation",8)
+	rows.add_theme_constant_override("separation",14)
 	add_child(rows)
 	var title := Label.new()
 	heading = title
@@ -41,6 +36,8 @@ func _ready() -> void:
 	var front := Label.new()
 	front.text = "НАПРАВЛЕНИЕ АТАКИ ↑"
 	front.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	front.add_theme_font_size_override("font_size",12)
+	front.add_theme_color_override("font_color",Color("#92afbf"))
 	drawing.add_child(front)
 	canvas = preload("res://scripts/ui/formation_canvas.gd").new()
 	canvas.size_flags_vertical = SIZE_EXPAND_FILL
@@ -48,24 +45,47 @@ func _ready() -> void:
 	drawing.add_child(canvas)
 	canvas.changed.connect(update_count)
 	count_label = Label.new()
+	count_label.add_theme_font_size_override("font_size",12)
+	count_label.add_theme_color_override("font_color",Color("#92afbf"))
 	drawing.add_child(count_label)
+	var sidebar := PanelContainer.new()
+	sidebar.add_theme_stylebox_override("panel",WINDOW_STYLE.surface("#10212ccc","#344f5f50",14,12))
+	editor_view.add_child(sidebar)
 	var controls := VBoxContainer.new()
-	controls.custom_minimum_size.x = 246
-	controls.add_theme_constant_override("separation",8)
-	editor_view.add_child(controls)
+	controls.custom_minimum_size.x = 222
+	controls.add_theme_constant_override("separation",12)
+	sidebar.add_child(controls)
 	name_input = LineEdit.new()
 	name_input.placeholder_text = "Название построения"
 	name_input.max_length = 32
+	WINDOW_STYLE.field(name_input)
 	controls.add_child(name_input)
+	var preview_center := CenterContainer.new()
+	preview_center.size_flags_vertical = SIZE_EXPAND_FILL
+	controls.add_child(preview_center)
+	skill_preview = Control.new()
+	skill_preview.custom_minimum_size = Vector2(112,112)
+	skill_preview.mouse_filter = MOUSE_FILTER_IGNORE
+	preview_center.add_child(skill_preview)
+	skill_preview.draw.connect(func():
+		skill_preview.draw_style_box(WINDOW_STYLE.surface("#162f40","#567f9680",16),Rect2(Vector2.ZERO,skill_preview.size))
+		preload("res://scripts/ui/formation_icon.gd").draw_on(skill_preview,canvas.points,Rect2(20,20,72,72),3.5))
 	var tools := HBoxContainer.new()
+	tools.add_theme_constant_override("separation",6)
 	controls.add_child(tools)
-	make_button("Очистить",tools,func(): canvas.points.clear(); canvas.queue_redraw(); update_count())
-	var symmetry := CheckButton.new()
+	var clear := make_button("Очистить",tools,func(): canvas.points.clear(); canvas.queue_redraw(); update_count())
+	clear.size_flags_horizontal = SIZE_EXPAND_FILL
+	var symmetry := Button.new()
+	symmetry.toggle_mode = true
+	symmetry.focus_mode = FOCUS_NONE
 	symmetry.text = "Симметрия"
-	symmetry.tooltip_text = "Добавлять, удалять и перемещать зеркальные пары"
+	symmetry.size_flags_horizontal = SIZE_EXPAND_FILL
+	WINDOW_STYLE.button(symmetry)
 	symmetry.toggled.connect(func(value): canvas.mirrored = value)
 	tools.add_child(symmetry)
 	save_button = make_button("Сохранить",controls,save_draft)
+	save_button.custom_minimum_size.y = 42
+	WINDOW_STYLE.button(save_button,true)
 	message = Label.new()
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	message.add_theme_font_size_override("font_size",12)
@@ -76,6 +96,7 @@ func make_button(text: String, parent: Node, action: Callable) -> Button:
 	var result := Button.new()
 	result.text = text
 	result.focus_mode = FOCUS_NONE
+	WINDOW_STYLE.button(result)
 	result.pressed.connect(action)
 	parent.add_child(result)
 	return result
@@ -118,6 +139,7 @@ func close_editor() -> void:
 func update_count() -> void:
 	count_label.text = "Мест: %d / 15" % canvas.points.size()
 	save_button.disabled = canvas.points.size() != 15
+	if is_instance_valid(skill_preview): skill_preview.queue_redraw()
 
 func save_draft() -> void:
 	var error: String = library.save_template({"id":draft_id,"name":name_input.text,"slots":canvas.points.duplicate(true),"spacing":draft_spacing,"types":draft_types.duplicate()})

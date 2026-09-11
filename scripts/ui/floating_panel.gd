@@ -1,4 +1,5 @@
 extends PanelContainer
+const WINDOW_STYLE := preload("res://scripts/ui/formation_window_style.gd")
 ## Non-modal window: header drag, persistent position, local input barrier.
 var world: Node3D
 var header: HBoxContainer
@@ -12,6 +13,7 @@ func setup_header(title: Label, rows: VBoxContainer, close_action: Callable) -> 
 	header = HBoxContainer.new()
 	header.mouse_filter = MOUSE_FILTER_STOP
 	header.mouse_default_cursor_shape = CURSOR_MOVE
+	header.custom_minimum_size.y = 36
 	rows.add_child(header)
 	title.mouse_filter = MOUSE_FILTER_IGNORE
 	title.size_flags_horizontal = SIZE_EXPAND_FILL
@@ -20,6 +22,11 @@ func setup_header(title: Label, rows: VBoxContainer, close_action: Callable) -> 
 	close_button.text = "×"
 	close_button.add_theme_font_size_override("font_size",24)
 	close_button.custom_minimum_size = Vector2(34,34)
+	WINDOW_STYLE.button(close_button,false,17)
+	for state in ["normal","hover","pressed","hover_pressed","disabled"]:
+		var style: StyleBoxFlat = close_button.get_theme_stylebox(state)
+		style.set_content_margin_all(0)
+	close_button.size_flags_vertical = SIZE_SHRINK_CENTER
 	close_button.focus_mode = FOCUS_NONE
 	close_button.tooltip_text = "Закрыть"
 	close_button.pressed.connect(func(): window_dragging = false; close_action.call())

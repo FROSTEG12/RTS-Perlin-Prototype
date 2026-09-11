@@ -10,13 +10,7 @@ const WINDOW_SIZE := Vector2(500,360)
 func _ready() -> void:
 	mouse_filter = MOUSE_FILTER_STOP
 	size = WINDOW_SIZE
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color("#0c1720fa")
-	style.border_color = Color("#718d9e")
-	style.set_border_width_all(1)
-	style.set_corner_radius_all(4)
-	for edge in ["left","right","top","bottom"]: style.set("content_margin_"+edge,12)
-	add_theme_stylebox_override("panel",style)
+	add_theme_stylebox_override("panel",WINDOW_STYLE.window(14))
 	var rows := VBoxContainer.new()
 	rows.add_theme_constant_override("separation",10)
 	add_child(rows)
@@ -29,6 +23,7 @@ func _ready() -> void:
 	scroll.size_flags_vertical = SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	rows.add_child(scroll)
+	WINDOW_STYLE.scrollbar(scroll.get_v_scroll_bar())
 	list_rows = GridContainer.new()
 	list_rows.columns = COLUMNS
 	list_rows.add_theme_constant_override("h_separation",6)

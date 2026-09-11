@@ -1,6 +1,7 @@
 extends Button
 signal edit_requested
 const ICON := preload("res://scripts/ui/formation_icon.gd")
+const STYLE := preload("res://scripts/ui/formation_window_style.gd")
 var template: Dictionary
 var drag_copy := false
 const SIDE := 88.0
@@ -13,27 +14,34 @@ func _ready() -> void:
 	disabled = template.is_empty()
 	mouse_filter = MOUSE_FILTER_IGNORE if drag_copy else MOUSE_FILTER_STOP
 	tooltip_text = "Бафы в разработке" if not template.is_empty() and not drag_copy else ""
+	mouse_default_cursor_shape = CURSOR_POINTING_HAND if not template.is_empty() else CURSOR_ARROW
 	for state in ["normal","hover","pressed","hover_pressed","disabled"]:
-		var style := StyleBoxFlat.new()
-		style.bg_color = Color("#142d3d") if state in ["pressed","hover_pressed"] else Color("#081219")
-		style.border_color = Color("#9acfe4") if state != "normal" else Color("#49616f")
+		var style := STYLE.surface("#122531","#4b6a7c80",11)
+		if state == "hover":
+			style.bg_color = Color("#1b3546")
+			style.border_color = Color("#84b4ce")
+		if state in ["pressed","hover_pressed"]:
+			style.bg_color = Color("#214962")
+			style.border_color = Color("#a6d7ed")
+			style.border_width_bottom = 3
 		if state == "disabled":
-			style.bg_color = Color("#09131a")
-			style.border_color = Color("#293d4b")
-		style.set_border_width_all(1)
-		style.set_corner_radius_all(3)
+			style.bg_color = Color("#09151e")
+			style.border_color = Color("#344b5a50")
 		add_theme_stylebox_override(state,style)
 	if template.is_empty(): return
 	var title := Label.new()
 	title.text = template.name
-	title.position = Vector2(4,69)
-	title.size = Vector2(80,16)
+	title.position = Vector2(4,66)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.clip_text = true
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	title.add_theme_font_size_override("font_size",11)
+	title.size = Vector2(80,16)
+	title.add_theme_color_override("font_color",Color("#bdcfd9"))
 	title.mouse_filter = MOUSE_FILTER_IGNORE
 	add_child(title)
+	# Theme/minimum-size invalidation is deferred; fit after it has settled.
+	title.set_deferred("size",Vector2(80,16))
 	gui_input.connect(func(event):
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
 			edit_requested.emit()

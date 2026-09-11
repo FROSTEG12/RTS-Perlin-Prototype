@@ -46,6 +46,10 @@ func run() -> void:
 	world.game_camera.set_process(false)
 	for unit in world.player_units: unit.set_process(false)
 	var panel = world.hud.formation_panel
+	assert(panel.get_theme_stylebox("panel").corner_radius_top_left == 22)
+	assert(panel.close_button.get_theme_stylebox("normal").corner_radius_top_left == 17)
+	assert(panel.canvas._background().corner_radius_top_left == 14)
+	assert(panel.name_input.get_theme_stylebox("normal").corner_radius_top_left == 10)
 	# Keep all test persistence out of the real player's library.
 	world.hud.formation_library.storage_path = library.storage_path
 	assert(world.hud.formation_library.save_template(template).is_empty())
@@ -228,8 +232,13 @@ func check_floating_windows(world: Node) -> void:
 	assert(inventory.list_rows.columns == 5 and inventory.list_rows.get_child_count() >= 15)
 	assert(not inventory.message.visible)
 	assert(inventory.size == Vector2(500,360))
+	assert(inventory.get_theme_stylebox("panel").corner_radius_top_left == 22)
 	for cell in inventory.list_rows.get_children():
 		assert(cell.size == Vector2(88,88),"Inventory cells must be square")
+		assert(cell.get_theme_stylebox("normal").corner_radius_top_left == 11)
+		for caption in cell.get_children():
+			if caption is Label:
+				assert(caption.size.x <= 80 and caption.position.x+caption.size.x <= cell.size.x-4,"Long names must ellipsize within their cell")
 		if cell.template.is_empty():
 			assert(cell.disabled and cell._get_drag_data(Vector2.ZERO) == null)
 	var original_templates: Array = hud.formation_library.templates.duplicate(true)
