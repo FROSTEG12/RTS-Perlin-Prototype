@@ -2,6 +2,7 @@ extends RefCounted
 ## Formation templates and command intent belong to squads, never soldier numbers.
 const LIBRARY := preload("res://scripts/units/formation_library.gd")
 const GROUPS := preload("res://scripts/units/unit_control_groups.gd")
+const ASSIGNMENT := preload("res://scripts/units/formation_assignment.gd")
 var dispatcher: Node
 var active := {}
 var intentions := {}
@@ -133,11 +134,13 @@ func build_plan(group: Array, template: Dictionary, goals: Array, direction: Vec
 	var renderer = dispatcher.world.map_renderer
 	var paths = dispatcher.world.pathfinder
 	var origins := {}
+	var source_positions: Array[Vector3] = []
 	for unit in group:
 		if goals.size()+(unit.move_orders.size() if queued else 0) > 30:
 			last_error = "Слишком длинная очередь приказов"
 			return {}
 		origins[unit] = unit.order_anchor(renderer,queued)
+		source_positions.append(unit.target_positions.back() if queued and not unit.target_positions.is_empty() else unit.global_position)
 	var stages: Array = []
 	var assignment: Array = []
 	var offsets := LIBRARY.offsets(template)
@@ -164,13 +167,13 @@ func build_plan(group: Array, template: Dictionary, goals: Array, direction: Vec
 			last_error = "Не хватает суши для этого построения"
 			return {}
 		var jobs: Array = []
-		# Assign each free slot to the nearest remaining soldier; slot numbers are not IDs.
-		var available := group.duplicate()
+		# Optimize all 15 assignments together. Keep the chosen mapping along the
+		# following stages; never reshuffle soldiers every frame while they run.
+		if stages.is_empty():
+			for source in ASSIGNMENT.match_positions(source_positions,points):
+				assignment.append(group[source])
 		for index in points.size():
 			var point := points[index]
-			if stages.is_empty():
-				available.sort_custom(func(a,b): return a.global_position.distance_squared_to(point) < b.global_position.distance_squared_to(point))
-				assignment.append(available.pop_front())
 			var unit = assignment[index]
 			var cell: Vector2i = renderer.world_to_cell(point)
 			var path: Array[Vector2i] = paths.find_path(origins[unit],cell)
