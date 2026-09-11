@@ -5,7 +5,7 @@ signal slot_toggled(index: int, active: bool)
 const KEYS := [KEY_Q, KEY_W, KEY_E, KEY_D, KEY_F, KEY_R]
 const CAPTIONS := ["Q", "W", "E", "D", "F", "R"]
 const SLOT_SIZE := 64.0
-const SLOT_GAP := 6.0
+const SLOT_GAP := 4.0
 var slots: Array[Button] = []
 var last_requested := -1
 var library: RefCounted
@@ -18,17 +18,17 @@ func _ready() -> void:
 	padding.border_color = Color("#40546060")
 	padding.set_border_width_all(1)
 	padding.set_corner_radius_all(3)
-	padding.content_margin_left = 10
-	padding.content_margin_right = 10
+	padding.content_margin_left = 6
+	padding.content_margin_right = 6
 	padding.content_margin_top = 10
 	padding.content_margin_bottom = 10
 	add_theme_stylebox_override("panel", padding)
 	var row := HBoxContainer.new()
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_theme_constant_override("separation", 6)
+	row.add_theme_constant_override("separation", int(SLOT_GAP))
 	add_child(row)
 	inventory_button = preload("res://scripts/ui/inventory_open_button.gd").new()
-	inventory_button.custom_minimum_size = Vector2(28,SLOT_SIZE)
+	inventory_button.custom_minimum_size = Vector2.ONE*SLOT_SIZE
 	inventory_button.focus_mode = FOCUS_NONE
 	inventory_button.tooltip_text = "Инвентарь навыков"
 	inventory_button.pressed.connect(func(): get_parent().open_inventory())
@@ -77,10 +77,11 @@ func _ready() -> void:
 		slots.append(slot)
 
 func fit_width(available: float) -> Vector2:
-	var side := clampf(floorf((available - 20 - 34 - SLOT_GAP * 5) / 6), 48, SLOT_SIZE)
+	var side := clampf(floorf((available - 12 - 48 - SLOT_GAP * 6) / 6), 48, SLOT_SIZE)
 	for slot in slots: slot.custom_minimum_size = Vector2.ONE * side
-	inventory_button.custom_minimum_size = Vector2(28,side)
-	return Vector2(side * 6 + SLOT_GAP * 5 + 20 + 34, side + 20)
+	var inventory_width := clampf(available-12-SLOT_GAP*6-side*6,48,SLOT_SIZE)
+	inventory_button.custom_minimum_size = Vector2(inventory_width,side)
+	return Vector2(side * 6 + SLOT_GAP * 6 + 12 + inventory_width, side + 20)
 
 func request_slot(index: int) -> void:
 	slots[index].button_pressed = not slots[index].button_pressed
@@ -116,7 +117,7 @@ func refresh_bindings() -> void:
 		var item: Dictionary = library.get_template(library.bindings[i])
 		slots[i].preview = item.get("slots",[])
 		if item.is_empty(): slots[i].set_pressed_no_signal(false)
-		slots[i].tooltip_text = item.get("name","Пустой слот")+" · ПКМ — убрать назначение"
+		slots[i].tooltip_text = "Бафы в разработке"
 		slots[i].queue_redraw()
 	sync_active()
 

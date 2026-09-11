@@ -134,6 +134,6 @@ func save_draft() -> void:
 func apply_template(template: Dictionary) -> bool:
 	var formations = world.rts.orders.formations
 	var accepted: bool = formations.apply(world.rts.selected,template)
-	world.hud.formation_inventory.message.text = "Построение: "+template.name if accepted else formations.last_error
+	world.hud.formation_inventory.show_error("" if accepted else formations.last_error)
 	world.hud.skill_slots.sync_active()
 	return accepted

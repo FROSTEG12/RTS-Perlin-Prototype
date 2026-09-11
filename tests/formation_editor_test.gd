@@ -98,7 +98,7 @@ func run() -> void:
 	for i in 8: await process_frame
 	var inventory = world.hud.formation_inventory
 	await check_floating_windows(world)
-	var inventory_card = inventory.list_rows.get_child(inventory.list_rows.get_child_count()-1)
+	var inventory_card = inventory.list_rows.get_child(world.hud.formation_library.templates.size()-1)
 	inventory.list_rows.get_parent().ensure_control_visible(inventory_card)
 	for i in 4: await process_frame
 	world.rts.set_selection([world.lead_unit])
@@ -218,6 +218,35 @@ func check_floating_windows(world: Node) -> void:
 	assert(hud.skill_slots.inventory_button.get_global_rect().end.x < hud.skill_slots.slots[0].global_position.x)
 	for button in inventory.find_children("*","Button",true,false):
 		assert(not "Создать" in button.text)
+		assert(button.tooltip_text in ["","Бафы в разработке"],"No instructional tooltips")
+	assert(hud.skill_slots.inventory_button.size.x >= 48)
+	var glyph: Texture2D = hud.skill_slots.inventory_button.GLYPH
+	assert(glyph.resource_path.ends_with("generated_navigation/inventory.png"))
+	assert(glyph.get_image().has_mipmaps())
+	var original := Image.load_from_file(ProjectSettings.globalize_path(glyph.resource_path))
+	assert(original.detect_alpha() != Image.ALPHA_NONE and original.get_pixel(0,0).a == 0)
+	assert(inventory.list_rows.columns == 5 and inventory.list_rows.get_child_count() >= 15)
+	assert(not inventory.message.visible)
+	assert(inventory.size == Vector2(500,360))
+	for cell in inventory.list_rows.get_children():
+		assert(cell.size == Vector2(88,88),"Inventory cells must be square")
+		if cell.template.is_empty():
+			assert(cell.disabled and cell._get_drag_data(Vector2.ZERO) == null)
+	var original_templates: Array = hud.formation_library.templates.duplicate(true)
+	while hud.formation_library.templates.size() < 21:
+		var extra := LIB.default_template()
+		extra.id = "overflow_%d" % hud.formation_library.templates.size()
+		hud.formation_library.templates.append(extra)
+	inventory.refresh_list()
+	for i in 4: await process_frame
+	assert(inventory.size == Vector2(500,360) and inventory.list_rows.get_child_count() == 25)
+	var last = inventory.list_rows.get_child(20)
+	inventory.list_rows.get_parent().ensure_control_visible(last)
+	for i in 4: await process_frame
+	assert(inventory.list_rows.get_parent().get_global_rect().encloses(last.get_global_rect()),"Overflow skills remain reachable by scrolling")
+	hud.formation_library.templates = original_templates
+	inventory.refresh_list()
+	for i in 4: await process_frame
 	hud._open_section(2)
 	editor.name_input.text = "Несохранённый черновик"
 	editor.canvas.points = [[0,0],[1,0]]

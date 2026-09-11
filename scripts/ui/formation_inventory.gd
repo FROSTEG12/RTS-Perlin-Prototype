@@ -3,10 +3,13 @@ extends "res://scripts/ui/floating_panel.gd"
 var library: RefCounted
 var list_rows: GridContainer
 var message: Label
+const COLUMNS := 5
+const VISIBLE_CELLS := 15
+const WINDOW_SIZE := Vector2(500,360)
 
 func _ready() -> void:
 	mouse_filter = MOUSE_FILTER_STOP
-	size = Vector2(520,380)
+	size = WINDOW_SIZE
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color("#0c1720fa")
 	style.border_color = Color("#718d9e")
@@ -21,23 +24,21 @@ func _ready() -> void:
 	title.text = "ИНВЕНТАРЬ НАВЫКОВ"
 	title.add_theme_font_size_override("font_size",17)
 	setup_header(title,rows,hide)
-	var help := Label.new()
-	help.text = "Перетащи навык на Q / W / E / D / F / R"
-	help.add_theme_font_size_override("font_size",12)
-	rows.add_child(help)
+	close_button.tooltip_text = ""
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	rows.add_child(scroll)
 	list_rows = GridContainer.new()
-	list_rows.columns = 4
-	list_rows.add_theme_constant_override("h_separation",10)
-	list_rows.add_theme_constant_override("v_separation",10)
+	list_rows.columns = COLUMNS
+	list_rows.add_theme_constant_override("h_separation",6)
+	list_rows.add_theme_constant_override("v_separation",6)
 	scroll.add_child(list_rows)
 	message = Label.new()
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	message.custom_minimum_size.y = 28
 	message.add_theme_font_size_override("font_size",12)
+	message.add_theme_color_override("font_color",Color("#edb0aa"))
+	message.hide() # Only real errors, never instructional/status copy.
 	rows.add_child(message)
 	library.changed.connect(refresh_list)
 	refresh_list()
@@ -53,9 +54,21 @@ func refresh_list() -> void:
 		item.template = template
 		item.button_group = selection
 		item.edit_requested.connect(func(): world.hud.formation_panel.edit_template(template))
-		item.pressed.connect(func(): message.text = template.name+" · ПКМ — изменить")
 		list_rows.add_child(item)
-	if library.load_error: message.text = "Файл навыков повреждён: запись заблокирована."
+	var capacity := maxi(VISIBLE_CELLS,ceili(float(library.templates.size())/COLUMNS)*COLUMNS)
+	for i in range(library.templates.size(),capacity):
+		var empty := preload("res://scripts/ui/formation_list_button.gd").new()
+		list_rows.add_child(empty)
+	if library.load_error: show_error("Файл навыков повреждён: запись заблокирована.")
+	if positioned: clamp_to_screen.call_deferred()
+
+func show_error(value: String) -> void:
+	message.text = value
+	message.visible = not value.is_empty()
+
+func clamp_to_screen() -> void:
+	size = WINDOW_SIZE
+	super.clamp_to_screen()
 
 func open() -> void:
 	if not positioned:
