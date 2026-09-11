@@ -38,3 +38,19 @@ static func cells(points: PackedVector2Array, renderer: Node3D) -> Array[Vector2
 			var p: Vector3 = renderer.cell_to_world(x,y)
 			if intersects(points,polygon(Vector2(p.x,p.z),Vector2.ONE,0)): result.append(Vector2i(x,y))
 	return result
+
+static func supported_by_land(points: PackedVector2Array, renderer: Node3D) -> bool:
+	# Sample the actual foundation, not the outer corners of raster cells.
+	var box := bounds(points)
+	for i in points.size():
+		var a := points[i]
+		var b := points[(i+1)%points.size()]
+		var steps := maxi(1,ceili(a.distance_to(b)/.25))
+		for step in steps+1:
+			var p := a.lerp(b,float(step)/steps)
+			if renderer._ground_surface_y(p.x,p.y)<renderer.WATER_Y+.01: return false
+	for y in range(ceili(box.size.y/.25)+1):
+		for x in range(ceili(box.size.x/.25)+1):
+			var p := box.position+Vector2(x,y)*.25
+			if Geometry2D.is_point_in_polygon(p,points) and renderer._ground_surface_y(p.x,p.y)<renderer.WATER_Y+.01: return false
+	return true

@@ -143,24 +143,44 @@ static func update_shadow_direction(renderer: Node3D, direction: Vector3) -> voi
 	for material in renderer.get_meta("tree_shadow_materials", []):
 		material.set_shader_parameter("sun_direction", direction)
 
+static func intersects_building(point: Vector2, kind: String, polygon: PackedVector2Array) -> bool:
+	if Geometry2D.is_point_in_polygon(point,polygon): return true
+	if kind != "tree": return false
+	# Reproduce the visible tree's deterministic species and scale.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(point)
+	var variant := rng.randi_range(0,TREE_SHEETS.size()-1)
+	var radius: float = HEIGHTS[variant]*rng.randf_range(.85,1.15)*.45+.15
+	for i in polygon.size():
+		if point.distance_to(Geometry2D.get_closest_point_to_segment(point,polygon[i],polygon[(i+1)%polygon.size()]))<=radius: return true
+	return false
+
 static func clear_area(renderer: Node3D, area: Rect2, polygon: PackedVector2Array = PackedVector2Array()) -> int:
 	var remaining: Array[Dictionary] = []
 	var removed := 0
+	var removed_points := {}
+	var removed_tree_points := {}
+	if polygon.is_empty(): polygon = preload("res://scripts/buildings/building_geometry.gd").polygon(area.get_center(),area.size,0)
 	for resource in renderer.resources:
 		var point: Vector3 = renderer.cell_to_world(resource.x,resource.y)
-		point += Vector3(resource.get("offset_x",0.0),0,resource.get("offset_y",0.0))
-		if resource.kind == "tree" and area.has_point(Vector2(point.x,point.z)) and (polygon.is_empty() or Geometry2D.is_point_in_polygon(Vector2(point.x,point.z),polygon)):
+		if resource.kind == "tree": point += Vector3(resource.get("offset_x",0.0),0,resource.get("offset_y",0.0))
+		var p := Vector2(point.x,point.z)
+		if area.grow(2.0).has_point(p) and intersects_building(p,resource.kind,polygon):
 			removed += 1
+			if resource.kind == "tree": removed_tree_points[p] = true
+			else: removed_points[p] = true
 		else: remaining.append(resource)
 	if removed == 0: return 0
 	renderer.resources = remaining
 	# Hide matching trunks in both instanced batches, including their shadows.
 	# Keep all other transforms/variants intact; no full forest rebuild on click.
 	for batch in renderer.resource_root.get_children():
-		if not batch is MultiMeshInstance3D or not (str(batch.name).begins_with("Trees_") or str(batch.name).begins_with("TreeShadows_")): continue
+		if not batch is MultiMeshInstance3D: continue
+		var is_tree := str(batch.name).begins_with("Trees_") or str(batch.name).begins_with("TreeShadows_")
+		var points: Dictionary = removed_tree_points if is_tree else removed_points
 		for index in batch.multimesh.instance_count:
 			var transform: Transform3D = batch.multimesh.get_instance_transform(index)
-			if area.has_point(Vector2(transform.origin.x,transform.origin.z)) and (polygon.is_empty() or Geometry2D.is_point_in_polygon(Vector2(transform.origin.x,transform.origin.z),polygon)):
+			if points.has(Vector2(transform.origin.x,transform.origin.z)):
 				transform.basis = Basis.IDENTITY.scaled(Vector3.ZERO)
 				batch.multimesh.set_instance_transform(index,transform)
 	return removed

@@ -157,8 +157,11 @@ func validate(origin: Vector2i) -> String:
 	var shape := shape_at(origin)
 	var joint: Dictionary = connection if origin == origin_cell else {}
 	if not joint.is_empty():
+		JOINTS.complete_connections(joint,sites,building_id)
 		var error: String = JOINTS.availability(joint.site,joint.port,joint.direction,building_id)
 		if not error.is_empty(): return error
+		for link in joint.secondary:
+			if not link.error.is_empty(): return link.error
 	for other in sites:
 		if joint.is_empty() and area.grow(.8).intersects(GEO.bounds(other.shape)) and (JOINTS.kind(building_id) == "gate" or JOINTS.kind(other.building_id) == "gate") and not JOINTS.compatible(building_id,other.building_id) and str(building_id).begins_with("fortress_"):
 			return "К воротам подходят только квадратные башни"
@@ -167,19 +170,13 @@ func validate(origin: Vector2i) -> String:
 		elif joint.is_empty() and str(building_id).begins_with("fortress_") and str(other.building_id).begins_with("fortress_") and area.grow(.8).intersects(GEO.bounds(other.shape)):
 			return "Подведите модуль к совместимому соединению"
 	var footprint := cells_at(origin)
+	if not GEO.supported_by_land(shape,renderer): return "Фундамент выходит в воду"
 	for cell in footprint:
-		if not renderer.is_land(cell): return "Нужна суша в пределах карты"
+		if not world.pathfinder.astar_grid.is_in_boundsv(cell): return "Нужна суша в пределах карты"
 		# Shared raster cells at joints are legal; true model overlaps were checked above.
-		if world.pathfinder.astar_grid.is_point_solid(cell) and not occupied.has(cell): return "Место занято"
+		if renderer.is_land(cell) and world.pathfinder.astar_grid.is_point_solid(cell) and not occupied.has(cell): return "Место занято"
 		var point: Vector3 = renderer.cell_to_world(cell.x,cell.y)
 		if world.vision.enabled and not world.vision.state.is_visible(point): return "Нужен обзор всей площадки"
-		# Logical land cells near a smoothed coastline can still contain water.
-		for offset in [Vector2.ZERO,Vector2(-.5,-.5),Vector2(.5,-.5),Vector2(.5,.5),Vector2(-.5,.5)]:
-			if renderer._ground_surface_y(point.x+offset.x,point.z+offset.y)<-.04: return "Слишком близко к воде"
-	for resource in renderer.resources:
-		if resource.kind == "tree": continue
-		var point: Vector3 = renderer.cell_to_world(resource.x,resource.y)
-		if Geometry2D.is_point_in_polygon(Vector2(point.x,point.z),shape): return "На площадке есть ресурс"
 	# Never trap a soldier or cut through an already accepted/queued route.
 	var expanded := Geometry2D.offset_polygon(shape,.3)
 	for unit in world.player_units:
@@ -254,7 +251,7 @@ func commit(repeat: bool = false) -> bool:
 			world.pathfinder.astar_grid.set_point_solid(cell,true)
 	if DEFINITIONS[building_id].clear_forest:
 		world.map_renderer.TREE_RESOURCES.clear_area(world.map_renderer,area,shape)
-		world.hud.minimap.refresh_forest(area)
+		world.hud.minimap.refresh_forest(area.grow(2.0))
 	world.hud.minimap.set_landmark(site.get_instance_id(),site.global_position,"building",world.local_team_id,[world.local_team_id])
 	world.rts.grid_overlay.refresh()
 	world.weather.refresh_world(world.map_renderer.get_half_extent())

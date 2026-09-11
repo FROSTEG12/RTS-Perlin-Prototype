@@ -81,14 +81,59 @@ static func nearest(sites: Array[Node3D], child_id: StringName, point: Vector2) 
 				result = item
 	return result
 
+static func complete_connections(connection: Dictionary, sites: Array[Node3D], child_id: StringName) -> void:
+	if connection.is_empty() or not connection.has("site"): return
+	connection["secondary"] = []
+	var used_ports := [connection.target_port]
+	var incoming: Array[Vector2] = [-connection.direction]
+	var walls := 1 if kind(connection.site.building_id)=="wall" else 0
+	var gates := 1 if kind(connection.site.building_id)=="gate" else 0
+	for other in sites:
+		if other == connection.site or not compatible(other.building_id,child_id): continue
+		if kind(child_id)=="square_tower":
+			if kind(other.building_id)=="wall" and walls>=3: continue
+			if kind(other.building_id)=="gate" and gates>=1: continue
+		var count := 4 if kind(other.building_id)=="square_tower" else 2
+		if is_round(other.building_id): count=1
+		for port in count:
+			var direction := port_direction(other,port)
+			if is_round(other.building_id): direction=(connection.center-Vector2(other.position.x,other.position.z)).normalized()
+			var link := candidate(other,-1 if is_round(other.building_id) else port,direction,child_id)
+			if Vector2(link.center).distance_to(connection.center)>.025: continue
+			var child_port := -1
+			if not is_round(child_id):
+				var child_count := 4 if kind(child_id)=="square_tower" else 2
+				for index in child_count:
+					if DIRECTIONS[index].rotated(-connection.yaw).dot(-direction)>.9999: child_port=index; break
+				if child_port<0 or child_port in used_ports: continue
+			else:
+				if incoming.any(func(d): return absf(d.angle_to(-direction))<deg_to_rad(65)): continue
+			link.target_port=child_port
+			connection.secondary.append(link)
+			used_ports.append(child_port)
+			incoming.append(-direction)
+			if kind(other.building_id)=="wall": walls+=1
+			if kind(other.building_id)=="gate": gates+=1
+			break
+
 static func register(site: Node3D, connection: Dictionary) -> void:
 	if connection.is_empty(): return
+	register_one(site,connection)
+	for link in connection.get("secondary",[]): register_one(site,link)
+
+static func register_one(site: Node3D, connection: Dictionary) -> void:
 	var parent: Node3D = connection.site
 	parent.connections.append({"site":site,"port":connection.port,"direction":connection.direction})
 	site.connections.append({"site":parent,"port":connection.target_port,"direction":-connection.direction})
 
 static func collision_allowed(other: Node3D, connection: Dictionary, shape: PackedVector2Array) -> bool:
 	if connection.is_empty(): return false
+	if collision_at_socket(other,connection,shape): return true
+	for link in connection.get("secondary",[]):
+		if collision_at_socket(other,link,shape): return true
+	return false
+
+static func collision_at_socket(other: Node3D, connection: Dictionary, shape: PackedVector2Array) -> bool:
 	if other == connection.site: return true # Exact socket pose, never arbitrary overlap.
 	# At a tower junction, foundations can overlap only INSIDE that same tower.
 	var parent: Node3D = connection.site

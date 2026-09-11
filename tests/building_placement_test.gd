@@ -96,9 +96,13 @@ func run() -> void:
 	placement.update_pointer(pointer)
 	assert(placement.origin_cell == location)
 	var expected := 0
+	var expected_trees := 0
+	var clear_shape: PackedVector2Array = placement.shape_at(location)
 	for resource in before:
 		var p: Vector3 = world.map_renderer.cell_to_world(resource.x,resource.y)+Vector3(resource.get("offset_x",0),0,resource.get("offset_y",0))
-		if resource.kind == "tree" and area.has_point(Vector2(p.x,p.z)): expected += 1
+		if world.map_renderer.TREE_RESOURCES.intersects_building(Vector2(p.x,p.z),resource.kind,clear_shape):
+			expected += 1
+			if resource.kind == "tree": expected_trees += 1
 	assert(expected > 0)
 	await click(pointer)
 	assert(placement.sites.size() == 1 and not placement.active)
@@ -112,10 +116,10 @@ func run() -> void:
 		for i in batch.multimesh.instance_count:
 			var transform: Transform3D = batch.multimesh.get_instance_transform(i)
 			if transform.basis.x.length() > .0001: continue
-			assert(area.has_point(Vector2(transform.origin.x,transform.origin.z)))
+			assert(area.grow(2).has_point(Vector2(transform.origin.x,transform.origin.z)))
 			if str(batch.name).begins_with("Trees_"): visible_removed += 1
 			if str(batch.name).begins_with("TreeShadows_"): shadow_removed += 1
-	if DisplayServer.get_name() != "headless": assert(visible_removed == expected and shadow_removed == expected)
+	if DisplayServer.get_name() != "headless": assert(visible_removed == expected_trees and shadow_removed == expected_trees)
 	# Incremental forest refresh must match a fresh minimap, without losing contacts.
 	var incremental: PackedByteArray = world.hud.minimap.terrain.get_image().get_data()
 	var rebuilt := preload("res://scripts/ui/minimap_terrain.gd").build(world.map_renderer,world.world_seed).get_data()

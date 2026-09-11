@@ -140,7 +140,7 @@ func run() -> void:
 	var expected_removed := 0
 	for resource in before_resources:
 		var p: Vector3 = world.map_renderer.cell_to_world(resource.x,resource.y)+Vector3(resource.get("offset_x",0),0,resource.get("offset_y",0))
-		if resource.kind == "tree" and Geometry2D.is_point_in_polygon(Vector2(p.x,p.z),expected_shape): expected_removed+=1
+		if world.map_renderer.TREE_RESOURCES.intersects_building(Vector2(p.x,p.z),resource.kind,expected_shape): expected_removed+=1
 	for down in [true,false]:
 		var click := InputEventMouseButton.new()
 		click.button_index=MOUSE_BUTTON_LEFT
