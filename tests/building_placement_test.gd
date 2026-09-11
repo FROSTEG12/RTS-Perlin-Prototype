@@ -42,7 +42,13 @@ func run() -> void:
 	for i in 4: await process_frame
 	world.hud.buildings.building_buttons[1].pressed.emit()
 	assert(placement.active and placement.building_id == &"sawmill")
-	assert(placement.dimensions() == Vector2i(4,6))
+	assert(placement.dimensions() == Vector2i(13,9))
+	var model_bounds: AABB = placement.MODEL.bounds(placement.preview_model)
+	assert(model_bounds.size.x > 12 and model_bounds.size.x < 13)
+	assert(model_bounds.size.z < 9 and absf(model_bounds.position.y)<.001)
+	for mesh in placement.MODEL.meshes(placement.preview_model):
+		assert(mesh.material_override == placement.projection_material)
+		assert(mesh.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 	var location := Vector2i(-1,-1)
 	for resource in world.map_renderer.resources:
 		if resource.kind != "tree": continue
@@ -60,7 +66,7 @@ func run() -> void:
 	assert(placement.origin_cell == location and placement.last_error.is_empty())
 	var old_requested: int = world.hud.skill_slots.last_requested
 	key(KEY_E)
-	assert(placement.quarter_turn == 1 and placement.dimensions() == Vector2i(6,4))
+	assert(placement.quarter_turn == 1 and placement.dimensions() == Vector2i(9,13))
 	assert(world.hud.skill_slots.last_requested == old_requested)
 	key(KEY_Q)
 	assert(placement.quarter_turn == 0 and placement.origin_cell == location)
@@ -94,7 +100,7 @@ func run() -> void:
 	await click(pointer)
 	assert(placement.sites.size() == 1 and not placement.active)
 	assert(before.size()-world.map_renderer.resources.size() == expected)
-	assert(placement.occupied.size() == 24)
+	assert(placement.occupied.size() == 117)
 	for cell in placement.occupied: assert(world.pathfinder.astar_grid.is_point_solid(cell))
 	var visible_removed := 0
 	var shadow_removed := 0
@@ -112,7 +118,9 @@ func run() -> void:
 	var rebuilt := preload("res://scripts/ui/minimap_terrain.gd").build(world.map_renderer,world.world_seed).get_data()
 	assert(incremental==rebuilt,"Local forest update must exactly match full redraw")
 	var site = placement.sites[0]
-	assert(site.stage == &"planned" and site.model_anchor.name == "ModelAnchor")
+	assert(site.stage == &"completed" and site.model_anchor.name == "ModelAnchor")
+	assert(placement.MODEL.bounds(site.model_anchor.get_child(0)).is_equal_approx(model_bounds))
+	for mesh in placement.MODEL.meshes(site.model_anchor): assert(mesh.material_override == null)
 	assert(world.hud.minimap.landmarks.has(site.get_instance_id()))
 	await capture("sawmill-site.png")
 	placement.begin(&"sawmill")

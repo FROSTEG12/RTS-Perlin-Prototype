@@ -141,6 +141,8 @@ func run() -> void:
 			assert(tile.find_children("*", "Label", true, false).is_empty(), "Tile names are hover tooltips only")
 			assert(not tile.tooltip_text.is_empty())
 		await gui_click(world.hud.buildings.building_buttons[1])
+		assert(world.placement.active and not world.hud.buildings.list_panel.visible)
+		world.placement.cancel()
 		await create_timer(0.22).timeout
 		var raised: Control = world.hud.buildings.building_buttons[1]
 		var resting: Control = world.hud.buildings.building_buttons[0]
@@ -156,6 +158,8 @@ func run() -> void:
 		assert(is_equal_approx(raised.face.position.y, 18))
 		assert(is_zero_approx(resting.face.position.y))
 		await gui_click(raised)
+		assert(world.placement.active and not world.hud.buildings.list_panel.visible)
+		world.placement.cancel()
 		await create_timer(0.22).timeout
 		assert(world.hud.buildings.active_building == &"sawmill")
 		assert(world.rts.selected.size() == 15)

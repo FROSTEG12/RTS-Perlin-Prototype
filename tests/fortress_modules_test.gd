@@ -39,6 +39,7 @@ func run() -> void:
 		var origin := Vector2i(-1,-1)
 		for y in range(10,90,3):
 			for x in range(10,90,3):
+				if card.entry.id == &"fortress_wall" and not placement.validate(Vector2i(x+6,y)).is_empty(): continue
 				if placement.validate(Vector2i(x,y)).is_empty(): origin=Vector2i(x,y); break
 			if origin.x>=0: break
 		assert(origin.x>=0)
@@ -50,12 +51,33 @@ func run() -> void:
 		assert(is_equal_approx(placement.preview_model.rotation.y,PI/2))
 		placement.rotate_step(-1)
 		assert(placement.bounds_at(placement.origin_cell)==initial)
+		var tint: Color = placement.projection_material.get_shader_parameter("tint")
+		assert(tint == Color("#8cdaef"))
+		world.game_camera.focus_on(placement.preview.position)
+		world.game_camera.position+=placement.preview.position-world.game_camera.screen_to_ground(Vector2(640,320))
+		placement.preview.show()
+		if DisplayServer.get_name() != "headless":
+			for i in 4: await process_frame
+			await RenderingServer.frame_post_draw
+			root.get_texture().get_image().save_png(OUT+str(card.entry.id)+"-ghost.png")
 		assert(placement.commit())
 		var site = placement.sites.back()
-		assert(site.stage==&"test_module" and site.model_anchor.get_child_count()==1)
+		assert(site.stage==&"completed" and site.model_anchor.get_child_count()==1)
 		assert(site.model_anchor.get_child(0) is MeshInstance3D)
+		assert(site.model_anchor.get_child(0).material_override == null)
 		# An adjacent same-width section shares the exact footprint boundary.
 		placement.begin(card.entry.id)
+		placement.origin_cell=origin
+		placement.refresh_preview()
+		assert(not placement.last_error.is_empty())
+		assert(placement.projection_material.get_shader_parameter("tint") == Color("#ee7971"))
+		if card.entry.id == &"fortress_wall":
+			var adjacent: Vector2i = origin+Vector2i(6,0)
+			assert(placement.snap_neighbors(adjacent+Vector2i(1,0),false) == adjacent+Vector2i(1,0))
+			assert(placement.snap_neighbors(adjacent+Vector2i(1,0),true) == adjacent)
+			placement.origin_cell=adjacent
+			assert(placement.commit(true) and placement.active)
+			assert(not placement.commit(),"Repeated placement cannot overlap the previous module")
 		var next_area: Rect2 = placement.bounds_at(origin+Vector2i(placement.dimensions().x,0))
 		assert(is_equal_approx(next_area.position.x,initial.end.x))
 		placement.cancel()
@@ -69,6 +91,6 @@ func run() -> void:
 			for i in 8: await process_frame
 			await RenderingServer.frame_post_draw
 			root.get_texture().get_image().save_png(OUT+str(card.entry.id)+"-scale.png")
-	assert(placement.sites.size()==5)
+	assert(placement.sites.size()==6)
 	print("FORTRESS_MODULES_PASS five_independent_models no_assembly mesh_bounds rotated footprint_adjacent placement")
 	quit()

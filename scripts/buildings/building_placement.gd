@@ -1,7 +1,7 @@
 extends Node3D
 ## One placement transaction: preview never mutates forest, navigation or resources.
 const DEFINITIONS := {
-	&"sawmill": {"title":"Лесопилка","size":Vector2i(4,6),"clear_forest":true},
+	&"sawmill": {"title":"Лесопилка","size":Vector2i(13,9),"clear_forest":true,"model":"sawmill"},
 	&"fortress_wall": {"title":"Секция стены","size":Vector2i(6,2),"clear_forest":true,"model":"wall"},
 	&"fortress_gate": {"title":"Ворота","size":Vector2i(6,2),"clear_forest":true,"model":"gate"},
 	&"fortress_round_tower": {"title":"Круглая башня","size":Vector2i(3,3),"clear_forest":true,"model":"round_tower"},
@@ -19,11 +19,12 @@ var last_error := ""
 var preview: Node3D
 var grid: MeshInstance3D
 var grid_material: ShaderMaterial
-var ghost: MeshInstance3D
-var ghost_material: StandardMaterial3D
 var arrow: Label3D
-var status: Label3D
+var status: Label
+var hint_panel: PanelContainer
 var preview_model: Node3D
+var projection_material: ShaderMaterial
+const MODEL = preload("res://scripts/buildings/building_model.gd")
 
 func _ready() -> void:
 	preview = Node3D.new()
@@ -34,33 +35,37 @@ func _ready() -> void:
 	grid.mesh = plane
 	grid.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	grid_material = ShaderMaterial.new()
+	grid_material.render_priority = 1
 	grid_material.shader = preload("res://shaders/building_grid.gdshader")
 	grid.material_override = grid_material
 	preview.add_child(grid)
-	ghost = MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(4,.65,6)
-	ghost.mesh = box
-	ghost.position.y = .325
-	ghost.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	ghost_material = StandardMaterial3D.new()
-	ghost_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	ghost_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	ghost.material_override = ghost_material
-	preview.add_child(ghost)
 	arrow = Label3D.new()
 	arrow.text = "↑"
 	arrow.font_size = 100
 	arrow.pixel_size = .015
 	arrow.rotation.x = -PI/2
 	arrow.position.y = .7
+	arrow.no_depth_test = true
+	arrow.render_priority = 3
 	preview.add_child(arrow)
-	status = Label3D.new()
-	status.font_size = 26
-	status.pixel_size = .012
-	status.position.y = 1.6
-	status.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	preview.add_child(status)
+	var hints := CanvasLayer.new()
+	add_child(hints)
+	hint_panel = PanelContainer.new()
+	hint_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hint_panel.position = Vector2(16,132)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("#0c1720ed")
+	style.border_color = Color("#405460")
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(10)
+	style.set_content_margin_all(12)
+	hint_panel.add_theme_stylebox_override("panel",style)
+	hints.add_child(hint_panel)
+	status = Label.new()
+	status.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	status.add_theme_font_size_override("font_size",14)
+	hint_panel.add_child(status)
+	hint_panel.hide()
 	preview.hide()
 
 func begin(id: StringName) -> void:
@@ -70,22 +75,27 @@ func begin(id: StringName) -> void:
 	quarter_turn = 0
 	active = true
 	var definition: Dictionary = DEFINITIONS[id]
-	ghost.visible = not definition.has("model")
-	status.position.y = 1.6
-	if definition.has("model"):
-		preview_model = load("res://assets/buildings/fortress/"+definition.model+".tscn").instantiate()
-		preview.add_child(preview_model)
-		preview_model.transparency = .4
-		preview_model.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		status.position.y = preview_model.get_aabb().size.y+.6
+	preview_model = MODEL.create(definition.model)
+	preview.add_child(preview_model)
+	projection_material = ShaderMaterial.new()
+	projection_material.shader = preload("res://shaders/building_ghost.gdshader")
+	projection_material.render_priority = 2
+	for mesh in MODEL.meshes(preview_model):
+		mesh.material_override = projection_material
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	world.hud.buildings.list_panel.hide()
 	world.rts.cancel_drag()
 	update_pointer(get_viewport().get_mouse_position())
 
 func cancel() -> void:
+	if active and world.hud.buildings.active_category >= 0:
+		world.hud.buildings.list_panel.show()
 	active = false
 	if is_instance_valid(preview_model): preview_model.free()
 	preview_model = null
+	projection_material = null
 	if preview != null: preview.hide()
+	if hint_panel != null: hint_panel.hide()
 
 func dimensions() -> Vector2i:
 	var value: Vector2i = DEFINITIONS[building_id].size
@@ -105,6 +115,36 @@ func bounds_at(origin: Vector2i) -> Rect2:
 func snap(point: Vector3) -> Vector2i:
 	var size := dimensions()
 	return world.map_renderer.world_to_cell(point-Vector3((size.x-1)*.5,0,(size.y-1)*.5))
+
+func snap_neighbors(origin: Vector2i, enabled: bool) -> Vector2i:
+	# Optional edge magnet; it never stretches/rotates a wall or permits overlap.
+	if not enabled or not str(building_id).begins_with("fortress_"): return origin
+	var size := dimensions()
+	var result := origin
+	var best := 5.0
+	for site in sites:
+		if not str(site.building_id).begins_with("fortress_"): continue
+		var other: Vector2i = site.footprint
+		if site.quarter_turn%2: other = Vector2i(other.y,other.x)
+		var start: Vector2i = site.origin_cell
+		var candidates: Array[Vector2i] = []
+		for y in [origin.y,start.y,start.y+other.y-size.y]:
+			candidates.append(Vector2i(start.x-size.x,y))
+			candidates.append(Vector2i(start.x+other.x,y))
+		for x in [origin.x,start.x,start.x+other.x-size.x]:
+			candidates.append(Vector2i(x,start.y-size.y))
+			candidates.append(Vector2i(x,start.y+other.y))
+		for candidate in candidates:
+			var touches_x: bool = candidate.x+size.x == start.x or candidate.x == start.x+other.x
+			var touches_y: bool = candidate.y+size.y == start.y or candidate.y == start.y+other.y
+			var overlap_x: bool = mini(candidate.x+size.x,start.x+other.x)>maxi(candidate.x,start.x)
+			var overlap_y: bool = mini(candidate.y+size.y,start.y+other.y)>maxi(candidate.y,start.y)
+			if not ((touches_x and overlap_y) or (touches_y and overlap_x)): continue
+			var distance := Vector2(candidate-origin).length_squared()
+			if distance < best and validate(candidate).is_empty():
+				best = distance
+				result = candidate
+	return result
 
 func rotate_step(direction: int) -> void:
 	if not active: return
@@ -140,29 +180,32 @@ func validate(origin: Vector2i) -> String:
 func update_pointer(point: Vector2) -> void:
 	if not active: return
 	preview.visible = not world.rts.over_ui(point) and not world.is_generating and not world.developer_tools.visible and not world.game_camera.dragging
+	hint_panel.visible = preview.visible
 	if not preview.visible: return
 	var ground: Vector3 = world.game_camera.screen_to_ground(point)
-	if not ground.is_finite(): preview.hide(); return
-	origin_cell = snap(ground)
+	if not ground.is_finite(): preview.hide(); hint_panel.hide(); return
+	origin_cell = snap_neighbors(snap(ground),Input.is_physical_key_pressed(KEY_CTRL))
 	refresh_preview()
 
 func refresh_preview() -> void:
 	last_error = validate(origin_cell)
 	var center := bounds_at(origin_cell).get_center()
-	preview.position = Vector3(center.x,.045,center.y)
+	preview.position = Vector3(center.x,.02,center.y)
 	var tint := Color("#8cdaef") if last_error.is_empty() else Color("#ee7971")
 	grid_material.set_shader_parameter("tint",tint)
+	if projection_material: projection_material.set_shader_parameter("tint",tint)
 	grid_material.set_shader_parameter("footprint",Vector2(dimensions()))
 	grid_material.set_shader_parameter("map_min",Vector2.ONE*(-world.map_renderer.get_half_extent()))
-	ghost.rotation.y = quarter_turn*PI/2.0
-	if is_instance_valid(preview_model): preview_model.rotation.y = ghost.rotation.y
-	ghost_material.albedo_color = Color(tint,.13)
+	if is_instance_valid(preview_model): preview_model.rotation.y = quarter_turn*PI/2.0
 	arrow.rotation = Vector3(-PI/2,0,-quarter_turn*PI/2.0)
+	arrow.position = Vector3(0,.10,-DEFINITIONS[building_id].size.y*.5-.8).rotated(Vector3.UP,quarter_turn*PI/2.0)
 	arrow.modulate = tint
-	status.modulate = tint
-	status.text = DEFINITIONS[building_id].title+" · Q / E — поворот\n"+("ЛКМ — поставить · ПКМ / Esc — отмена" if last_error.is_empty() else last_error)
+	status.add_theme_color_override("font_color",tint)
+	status.text = DEFINITIONS[building_id].title+" · %d × %d м"%[dimensions().x,dimensions().y]+"\nQ / E — поворот · ЛКМ — поставить\nShift + ЛКМ — ещё · ПКМ / Esc — отмена"
+	if str(building_id).begins_with("fortress_"): status.text += "\nCtrl — стыковка по сетке"
+	if not last_error.is_empty(): status.text += "\n"+last_error
 
-func commit() -> bool:
+func commit(repeat: bool = false) -> bool:
 	last_error = validate(origin_cell)
 	if not last_error.is_empty(): refresh_preview(); return false
 	var area := bounds_at(origin_cell)
@@ -171,7 +214,7 @@ func commit() -> bool:
 	site.origin_cell = origin_cell
 	site.quarter_turn = quarter_turn
 	site.footprint = DEFINITIONS[building_id].size
-	site.model_name = DEFINITIONS[building_id].get("model","")
+	site.model_name = DEFINITIONS[building_id].model
 	add_child(site)
 	site.position = Vector3(area.get_center().x,.02,area.get_center().y)
 	sites.append(site)
@@ -184,7 +227,8 @@ func commit() -> bool:
 	world.hud.minimap.set_landmark(site.get_instance_id(),site.global_position,"building",world.local_team_id,[world.local_team_id])
 	world.rts.grid_overlay.refresh()
 	world.weather.refresh_world(world.map_renderer.get_half_extent())
-	cancel()
+	if repeat: refresh_preview()
+	else: cancel()
 	return true
 
 func reset_world() -> void:
@@ -214,5 +258,5 @@ func _unhandled_input(event: InputEvent) -> void:
 				if event.button_index == MOUSE_BUTTON_RIGHT: cancel()
 				elif not world.game_camera.dragging:
 					update_pointer(event.position)
-					if preview.visible: commit()
+					if preview.visible: commit(event.shift_pressed)
 			get_viewport().set_input_as_handled()

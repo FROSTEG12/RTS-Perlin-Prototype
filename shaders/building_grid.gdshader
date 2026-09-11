@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode unshaded, cull_disabled, depth_draw_never;
+render_mode unshaded, cull_disabled, depth_draw_never, depth_test_disabled, fog_disabled;
 uniform vec4 tint : source_color = vec4(.45,.8,1.,1.);
 uniform vec2 footprint = vec2(4.,6.);
 uniform vec2 map_min = vec2(-52.);
