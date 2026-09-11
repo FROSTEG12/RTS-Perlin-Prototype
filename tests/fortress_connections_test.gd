@@ -63,6 +63,15 @@ func run() -> void:
 	var left_wall := connect_to(left,1,&"fortress_wall")
 	var round_right := connect_to(right_wall,0,&"fortress_round_tower")
 	var round_left := connect_to(left_wall,1,&"fortress_round_tower_alt")
+	for tower in [round_right,round_left]:
+		var only_tower: Array[Node3D] = [tower]
+		var center := Vector2(tower.position.x,tower.position.z)
+		for degrees in range(-179,180,2):
+			var point := center+Vector2.RIGHT.rotated(deg_to_rad(degrees))*(J.ROUND_JOIN+J.WALL_HALF)
+			var snapped := J.nearest(only_tower,&"fortress_wall",point)
+			assert(not snapped.is_empty())
+			assert(absf(angle_difference(snapped.direction.angle(),snappedf(deg_to_rad(degrees),J.ORBIT_STEP)))<.0001)
+			assert(is_equal_approx(center.distance_to(snapped.center),J.ROUND_JOIN+J.WALL_HALF))
 	var turned := connect_to(round_right,-1,&"fortress_wall",Vector2.RIGHT.rotated(deg_to_rad(30)))
 	connect_to(round_left,-1,&"fortress_wall",Vector2.LEFT.rotated(deg_to_rad(-20)))
 	assert(absf(turned.yaw+deg_to_rad(30))<.001)

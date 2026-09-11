@@ -3,6 +3,7 @@ extends RefCounted
 const WALL_HALF := 2.694366
 const SQUARE_JOIN := .98
 const ROUND_JOIN := .72 # Wall corners tuck inside the 1.256 m shaft.
+const ORBIT_STEP := PI / 12.0
 const DIRECTIONS := [Vector2.RIGHT,Vector2.LEFT,Vector2.DOWN,Vector2.UP]
 
 static func kind(id: StringName) -> String:
@@ -71,7 +72,8 @@ static func nearest(sites: Array[Node3D], child_id: StringName, point: Vector2) 
 			if is_round(site.building_id):
 				direction = (point-Vector2(site.position.x,site.position.z)).normalized()
 				if direction.length_squared() < .5: continue
-				# Continuous mouse orbit; keyboard adds precise 15-degree increments.
+				# Mouse and keyboard share a fixed angular grid around the tower.
+				direction = Vector2.RIGHT.rotated(snappedf(direction.angle(),ORBIT_STEP))
 			var item := candidate(site,-1 if is_round(site.building_id) else port,direction,child_id)
 			var distance: float = point.distance_squared_to(item.center)
 			if distance < best:

@@ -135,9 +135,9 @@ func rotate_step(direction: int) -> void:
 	if not active: return
 	if not connection.is_empty():
 		if JOINTS.is_round(connection.site.building_id) and JOINTS.kind(building_id) == "wall":
-			var next_yaw: float = connection.yaw+direction*PI/12.0
+			var next_yaw: float = connection.yaw+direction*JOINTS.ORBIT_STEP
 			var target_port: int = connection.target_port
-			connection = JOINTS.candidate(connection.site,-1,connection.direction.rotated(-direction*PI/12.0),building_id)
+			connection = JOINTS.candidate(connection.site,-1,connection.direction.rotated(-direction*JOINTS.ORBIT_STEP),building_id)
 			connection.yaw = next_yaw
 			connection.target_port = target_port
 			orbit_locked = true
@@ -223,7 +223,7 @@ func refresh_preview() -> void:
 		if connection.is_empty(): status.text += "\nАвтоматическое соединение рядом с модулями"
 		else:
 			status.text += "\nСоединение: "+DEFINITIONS[connection.site.building_id].title
-			if JOINTS.is_round(connection.site.building_id): status.text += "\nМышь — направление · Q/E — угол ±15°"
+			if JOINTS.is_round(connection.site.building_id): status.text += "\nМышь и Q/E — шаг по кругу 15°"
 			else: status.text += "\nНаправление закреплено точкой соединения"
 	if not last_error.is_empty(): status.text += "\n"+last_error
 
