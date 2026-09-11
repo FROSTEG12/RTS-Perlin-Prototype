@@ -50,6 +50,10 @@ func run() -> void:
 	world.hud.formation_library.storage_path = library.storage_path
 	assert(world.hud.formation_library.save_template(template).is_empty())
 	world.hud._set_section(2)
+	panel.edit_template({})
+	assert(panel.draft_spacing == 1.0 and panel.draft_types == LIB.TYPES)
+	assert(panel.find_children("*","HSlider",true,false).is_empty())
+	assert(panel.find_children("*","CheckBox",true,false).is_empty())
 	panel.edit_template(template)
 	assert(panel.editing and world.game_camera.formation_editing)
 	panel.name_input.grab_focus()
@@ -86,10 +90,14 @@ func run() -> void:
 		await capture("formation-editor-960.png")
 		root.size = Vector2i(1280,720)
 	panel.save_draft()
+	var saved: Dictionary = world.hud.formation_library.get_template("test_wedge")
+	assert(saved.spacing == 1.5 and saved.types == ["infantry"],"Removing metadata controls must not change existing templates")
 	assert(not panel.editing)
 	assert(not world.game_camera.formation_editing)
 	for i in 8: await process_frame
 	var inventory_card = panel.list_rows.get_child(panel.list_rows.get_child_count()-1)
+	panel.list_rows.get_parent().ensure_control_visible(inventory_card)
+	for i in 4: await process_frame
 	world.rts.set_selection([world.lead_unit])
 	var revision: int = world.lead_unit.order_revision
 	inventory_card.pressed.emit()

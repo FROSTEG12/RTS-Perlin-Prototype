@@ -10,11 +10,10 @@ var list_rows: GridContainer
 var editor_view: HBoxContainer
 var canvas: Control
 var name_input: LineEdit
-var interval: HSlider
-var interval_label: Label
+var draft_spacing := 1.0
+var draft_types: Array = LIBRARY.TYPES.duplicate()
 var count_label: Label
 var message: Label
-var allowed: Array[CheckBox] = []
 var save_button: Button
 var heading: Label
 
@@ -86,27 +85,6 @@ func _ready() -> void:
 	name_input.placeholder_text = "Название построения"
 	name_input.max_length = 32
 	controls.add_child(name_input)
-	interval_label = Label.new()
-	controls.add_child(interval_label)
-	interval = HSlider.new()
-	interval.min_value = 1
-	interval.max_value = 3
-	interval.step = 0.5
-	interval.value = 1
-	controls.add_child(interval)
-	interval.value_changed.connect(func(value): interval_label.text = "Интервал между точками: %.1f м" % value)
-	var label := Label.new()
-	label.text = "Разрешено для:"
-	controls.add_child(label)
-	var types := GridContainer.new()
-	types.columns = 2
-	controls.add_child(types)
-	for i in LIBRARY.TYPES.size():
-		var check := CheckBox.new()
-		check.text = LIBRARY.TYPE_NAMES[i]
-		check.add_theme_font_size_override("font_size",12)
-		types.add_child(check)
-		allowed.append(check)
 	var tools := HBoxContainer.new()
 	controls.add_child(tools)
 	make_button("Очистить",tools,func(): canvas.points.clear(); canvas.queue_redraw(); update_count())
@@ -158,9 +136,9 @@ func edit_template(template: Dictionary) -> void:
 	draft_id = template.get("id", "")
 	name_input.text = template.get("name", "") if draft_id != "default" else "Моё построение"
 	canvas.points = template.get("slots", []).duplicate(true)
-	interval.value = template.get("spacing",1.0)
-	interval_label.text = "Интервал между точками: %.1f м" % interval.value
-	for i in allowed.size(): allowed[i].button_pressed = LIBRARY.TYPES[i] in template.get("types",LIBRARY.TYPES)
+	# Metadata stays compatible with saved formations; these are no longer UI options.
+	draft_spacing = template.get("spacing",1.0)
+	draft_types = template.get("types",LIBRARY.TYPES).duplicate()
 	list_view.hide()
 	editor_view.show()
 	message.text = "15 слотов — позиции, а не конкретные солдаты."
@@ -187,10 +165,7 @@ func update_count() -> void:
 	save_button.disabled = canvas.points.size() != 15
 
 func save_draft() -> void:
-	var types: Array = []
-	for i in allowed.size():
-		if allowed[i].button_pressed: types.append(LIBRARY.TYPES[i])
-	var error: String = library.save_template({"id":draft_id,"name":name_input.text,"slots":canvas.points.duplicate(true),"spacing":interval.value,"types":types})
+	var error: String = library.save_template({"id":draft_id,"name":name_input.text,"slots":canvas.points.duplicate(true),"spacing":draft_spacing,"types":draft_types.duplicate()})
 	if not error.is_empty():
 		message.text = error
 		return
