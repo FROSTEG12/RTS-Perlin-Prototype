@@ -1,7 +1,8 @@
 extends Node3D
 ## One placement transaction: preview never mutates forest, navigation or resources.
 const DEFINITIONS := {
-	&"sawmill": {"title":"Лесопилка","size":Vector2i(8,6),"clear_forest":true,"model":"sawmill"},
+	&"sawmill": {"title":"Лесопилка","size":Vector2i(7,7),"clear_forest":true,"model":"sawmill"},
+	&"house": {"title":"Жилой дом","size":Vector2i(4,5),"clear_forest":true,"model":"house"},
 	&"fortress_wall": {"title":"Секция стены","size":Vector2i(6,2),"clear_forest":true,"model":"wall"},
 	&"fortress_gate": {"title":"Ворота","size":Vector2i(6,2),"clear_forest":true,"model":"gate"},
 	&"fortress_round_tower": {"title":"Круглая башня","size":Vector2i(3,3),"clear_forest":true,"model":"round_tower"},

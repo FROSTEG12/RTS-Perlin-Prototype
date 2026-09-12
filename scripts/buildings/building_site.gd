@@ -7,6 +7,7 @@ var origin_cell := Vector2i.ZERO
 var stage: StringName = &"completed"
 var model_anchor: Node3D
 var model_name := "sawmill"
+var construction_stage := 5
 var yaw := 0.0
 var shape := PackedVector2Array()
 var connections: Array[Dictionary] = []
@@ -25,3 +26,11 @@ func _ready() -> void:
 	add_child(model_anchor)
 	model_anchor.rotation.y = yaw
 	model_anchor.add_child(preload("res://scripts/buildings/building_model.gd").create(model_name))
+	set_construction_stage(construction_stage)
+
+func set_construction_stage(index: int) -> void:
+	if model_name not in ["sawmill","house"]: return
+	construction_stage = clampi(index,1,5)
+	stage = &"completed" if construction_stage==5 else &"construction"
+	if model_anchor != null:
+		preload("res://scripts/buildings/building_model.gd").set_stage(model_anchor,construction_stage)

@@ -1,15 +1,19 @@
 extends RefCounted
 ## Preview and finished object use the same scene, origin and scale.
 static func create(model: String) -> Node3D:
-	var path := "res://assets/buildings/settlement/LumberMill_BLU.glb" if model == "sawmill" else "res://assets/buildings/fortress/"+model+".tscn"
+	var staged := model in ["sawmill","house"]
+	var filename := "LumberMill" if model == "sawmill" else "Residence"
+	var path := "res://assets/buildings/construction/"+filename+"_Construction_BLU.glb" if staged else "res://assets/buildings/fortress/"+model+".tscn"
 	var result: Node3D = load(path).instantiate()
-	if model == "sawmill":
-		var box := bounds(result)
+	if staged:
+		# One transform for every stage; never re-center an individual frame.
+		var box := bounds(result.find_child("Stage_05_Complete",true,false))
 		result.position -= Vector3(box.get_center().x,box.position.y,box.get_center().z)
 		result.position *= .6
 		result.scale *= .6
 		var anchor := Node3D.new()
 		anchor.add_child(result)
+		set_stage(anchor,5)
 		return anchor
 	if model in ["square_tower","round_tower","round_tower_alt"]:
 		# Logical front is +Z: sawmill door and gate portcullis (source z .329..426).
@@ -24,6 +28,11 @@ static func create(model: String) -> Node3D:
 		anchor.add_child(facing)
 		return anchor
 	return result
+
+static func set_stage(root: Node3D, index: int) -> void:
+	for mesh in meshes(root):
+		if str(mesh.name).begins_with("Stage_"):
+			mesh.visible = str(mesh.name).begins_with("Stage_%02d_" % clampi(index,1,5))
 
 static func meshes(node: Node) -> Array[MeshInstance3D]:
 	var result: Array[MeshInstance3D] = []
