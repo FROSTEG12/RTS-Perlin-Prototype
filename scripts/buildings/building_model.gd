@@ -1,8 +1,8 @@
 extends RefCounted
 ## Preview and finished object use the same scene, origin and scale.
 static func create(model: String) -> Node3D:
-	var staged := model in ["sawmill","house"]
-	var filename := "LumberMill" if model == "sawmill" else "Residence"
+	var staged := model in ["sawmill","house","warehouse"]
+	var filename: String = {"sawmill":"LumberMill","house":"Residence","warehouse":"Warehouse"}.get(model,"")
 	var path := "res://assets/buildings/construction/"+filename+"_Construction_BLU.glb" if staged else "res://assets/buildings/fortress/"+model+".tscn"
 	var result: Node3D = load(path).instantiate()
 	if staged:
@@ -30,9 +30,10 @@ static func create(model: String) -> Node3D:
 	return result
 
 static func set_stage(root: Node3D, index: int) -> void:
-	for mesh in meshes(root):
-		if str(mesh.name).begins_with("Stage_"):
-			mesh.visible = str(mesh.name).begins_with("Stage_%02d_" % clampi(index,1,5))
+	for child in root.get_children():
+		if child is Node3D and str(child.name).begins_with("Stage_"):
+			child.visible = str(child.name).begins_with("Stage_%02d_" % clampi(index,1,5))
+		set_stage(child,index)
 
 static func meshes(node: Node) -> Array[MeshInstance3D]:
 	var result: Array[MeshInstance3D] = []

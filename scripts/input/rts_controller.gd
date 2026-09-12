@@ -173,7 +173,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			if not selected.is_empty():
 				var point: Vector3 = world.game_camera.screen_to_ground(event.position, MapRenderer3D.LAND_Y)
 				if point.is_finite():
-					orders.move(selected, world.map_renderer.world_to_cell(point), event.shift_pressed)
+					var resource: Dictionary = orders.gathering.pick(event.position,point)
+					if not resource.is_empty() and selected.any(func(unit): return unit.individual_control): orders.gathering.start(selected,resource)
+					else: orders.move(selected, world.map_renderer.world_to_cell(point), event.shift_pressed)
 			get_viewport().set_input_as_handled()
 		elif event.button_index == MOUSE_BUTTON_MIDDLE and event.pressed:
 			cancel_drag()

@@ -29,7 +29,7 @@ func _ready() -> void:
 	set_construction_stage(construction_stage)
 
 func set_construction_stage(index: int) -> void:
-	if model_name not in ["sawmill","house"]: return
+	if model_name not in ["sawmill","house","warehouse"]: return
 	construction_stage = clampi(index,1,5)
 	stage = &"completed" if construction_stage==5 else &"construction"
 	if model_anchor != null:

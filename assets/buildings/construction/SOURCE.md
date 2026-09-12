@@ -1,5 +1,10 @@
 # Construction variants
 
+Warehouse BLU/RED added from `Desktop/Переделанные модели/Склад/GLB`.
+Its stages are parent nodes: Stage_05_Complete includes the building and eight
+separate props. Visibility must toggle the stage parent, not only named meshes.
+Warehouse uses scale 0.6, footprint 6×8 including props; no hauling dependency yet.
+
 Copied from `C:/Users/FROSTEG/Desktop/Переделанные модели` (Лесопилка and Жилой дом,
 GLB folders), without changing the user's originals. BLU and RED exports contain
 five co-located Stage_01..05 meshes and embedded textures. BLU is used in play.

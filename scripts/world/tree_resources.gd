@@ -155,6 +155,21 @@ static func intersects_building(point: Vector2, kind: String, polygon: PackedVec
 		if point.distance_to(Geometry2D.get_closest_point_to_segment(point,polygon[i],polygon[(i+1)%polygon.size()]))<=radius: return true
 	return false
 
+static func remove_resource(renderer: Node3D, resource: Dictionary) -> void:
+	var p: Vector3 = renderer.cell_to_world(resource.x,resource.y)
+	var tree: bool = resource.kind=="tree"
+	if tree: p+=Vector3(resource.get("offset_x",0),0,resource.get("offset_y",0))
+	renderer.resources.erase(resource)
+	for batch in renderer.resource_root.get_children():
+		if not batch is MultiMeshInstance3D: continue
+		var tree_batch := str(batch.name).begins_with("Trees_") or str(batch.name).begins_with("TreeShadows_")
+		if tree_batch!=tree: continue
+		for i in batch.multimesh.instance_count:
+			var transform: Transform3D = batch.multimesh.get_instance_transform(i)
+			if Vector2(transform.origin.x,transform.origin.z).distance_squared_to(Vector2(p.x,p.z))<.000001:
+				transform.basis=Basis.IDENTITY.scaled(Vector3.ZERO)
+				batch.multimesh.set_instance_transform(i,transform)
+
 static func clear_area(renderer: Node3D, area: Rect2, polygon: PackedVector2Array = PackedVector2Array()) -> int:
 	var remaining: Array[Dictionary] = []
 	var removed := 0

@@ -8,12 +8,15 @@ const CONTROL_GROUPS := preload("res://scripts/units/unit_control_groups.gd")
 var pending: Array[Dictionary] = []
 var world: Node3D
 var formations = preload("res://scripts/input/formation_orders.gd").new()
+var gathering = preload("res://scripts/units/resource_gathering.gd").new()
 
 func _ready() -> void:
 	formations.dispatcher = self
+	gathering.dispatcher = self
 
 
 func move(units: Array, cell: Vector2i, queued: bool) -> void:
+	for unit in units: gathering.cancel(unit)
 	var point: Vector3 = world.map_renderer.cell_to_world(cell.x, cell.y)
 	if not world.map_renderer.is_land(cell):
 		result_received.emit(false, point, "Здесь нельзя пройти")
@@ -47,17 +50,20 @@ func stop(units: Array) -> void:
 	formations.clear(units)
 	var controlled := CONTROL_GROUPS.expand(units, world.rts.units())
 	for unit: Unit3D in controlled:
+		gathering.cancel(unit)
 		if is_instance_valid(unit):
 			unit.stop_orders(world.map_renderer)
 	pending = pending.filter(func(job: Dictionary): return job.unit not in controlled)
 
 
 func reset() -> void:
+	gathering.reset()
 	pending.clear()
 	formations.reset()
 
 
 func _process(_delta: float) -> void:
+	gathering.update(_delta)
 	formations.pace.update(_delta)
 	formations.prune()
 	for index in mini(PATHS_PER_FRAME, pending.size()):

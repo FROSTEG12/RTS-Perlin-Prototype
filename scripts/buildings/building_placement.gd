@@ -3,6 +3,7 @@ extends Node3D
 const DEFINITIONS := {
 	&"sawmill": {"title":"Лесопилка","size":Vector2i(7,7),"clear_forest":true,"model":"sawmill"},
 	&"house": {"title":"Жилой дом","size":Vector2i(4,5),"clear_forest":true,"model":"house"},
+	&"warehouse": {"title":"Склад","size":Vector2i(6,8),"clear_forest":true,"model":"warehouse"},
 	&"fortress_wall": {"title":"Секция стены","size":Vector2i(6,2),"clear_forest":true,"model":"wall"},
 	&"fortress_gate": {"title":"Ворота","size":Vector2i(6,2),"clear_forest":true,"model":"gate"},
 	&"fortress_round_tower": {"title":"Круглая башня","size":Vector2i(3,3),"clear_forest":true,"model":"round_tower"},
