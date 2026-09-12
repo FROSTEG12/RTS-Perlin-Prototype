@@ -40,7 +40,7 @@ var pause_menu: Control
 var display_layout: Node
 var vision: Node3D
 var placement: Node3D
-var stockpile := {"Дерево": 0, "Камень": 0, "Металл": 0, "Мясо": 0, "Ягоды": 0, "Уголь": 0}
+var stockpile := {"Дерево": 30, "Камень": 30, "Металл": 0, "Мясо": 0, "Ягоды": 0, "Уголь": 0}
 var local_team_id := 0
 var player_units: Array[Unit3D] = []
 
@@ -140,6 +140,7 @@ func _apply_day_night_lighting() -> void:
 
 
 func generate_world() -> void:
+	for key in stockpile: stockpile[key]=30 if key in ["Дерево","Камень"] else 0
 	if placement != null: placement.reset_world()
 	if rts != null:
 		rts.reset()

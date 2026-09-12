@@ -12,6 +12,7 @@ var selecting := false
 var drag_start := Vector2.ZERO
 var drag_end := Vector2.ZERO
 var additive := false
+var resource_area := false
 var hover_timer := 0.0
 var feedback_timer := 0.0
 var feedback_point := Vector3.ZERO
@@ -118,6 +119,7 @@ func reset() -> void:
 
 func cancel_drag() -> void:
 	selecting = false
+	resource_area = false
 	queue_redraw()
 
 
@@ -164,6 +166,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				drag_start = event.position
 				drag_end = drag_start
 				additive = event.shift_pressed
+				resource_area = event.alt_pressed and not selected.is_empty()
 			elif not event.pressed and selecting:
 				drag_end = event.position
 				_finish_selection()
@@ -173,6 +176,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			if not selected.is_empty():
 				var point: Vector3 = world.game_camera.screen_to_ground(event.position, MapRenderer3D.LAND_Y)
 				if point.is_finite():
+					if orders.gathering.deposit_at(selected,point):
+						get_viewport().set_input_as_handled()
+						return
 					var resource: Dictionary = orders.gathering.pick(event.position,point)
 					if not resource.is_empty() and selected.any(func(unit): return unit.individual_control): orders.gathering.start(selected,resource)
 					else: orders.move(selected, world.map_renderer.world_to_cell(point), event.shift_pressed)
@@ -233,6 +239,10 @@ func hit_unit(point: Vector2) -> Unit3D:
 
 
 func _finish_selection() -> void:
+	if resource_area:
+		orders.gathering.select_area(selected,Rect2(drag_start,drag_end-drag_start).abs())
+		cancel_drag()
+		return
 	var next: Array = selected.duplicate() if additive else []
 	if drag_start.distance_to(drag_end) < DRAG_THRESHOLD:
 		var unit := hit_unit(drag_end)

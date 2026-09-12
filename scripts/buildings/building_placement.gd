@@ -153,6 +153,8 @@ func rotate_step(direction: int) -> void:
 	refresh_preview()
 
 func validate(origin: Vector2i) -> String:
+	if building_id==&"warehouse" and not sites.any(func(site): return site.building_id==&"sawmill" and site.stage==&"completed"): return "Сначала постройте лесопилку"
+	if building_id in [&"warehouse",&"sawmill"] and (world.stockpile["Дерево"]<30 or world.stockpile["Камень"]<30): return "Нужно 30 дерева и 30 камня"
 	if not active: return "Выберите лесопилку"
 	var renderer = world.map_renderer
 	var area := bounds_at(origin)
@@ -225,10 +227,14 @@ func refresh_preview() -> void:
 			if JOINTS.is_round(connection.site.building_id): status.text += "\nМышь и Q/E — шаг по кругу 15°"
 			else: status.text += "\nНаправление закреплено точкой соединения"
 	if not last_error.is_empty(): status.text += "\n"+last_error
+	elif building_id in [&"sawmill",&"warehouse"]: status.text += "\nСтоимость: 30 дерева · 30 камня"
 
 func commit(repeat: bool = false) -> bool:
 	last_error = validate(origin_cell)
 	if not last_error.is_empty(): refresh_preview(); return false
+	if building_id in [&"warehouse",&"sawmill"]:
+		world.stockpile["Дерево"]-=30
+		world.stockpile["Камень"]-=30
 	var area := bounds_at(origin_cell)
 	var pose := pose_at(origin_cell)
 	var shape := shape_at(origin_cell)
@@ -240,6 +246,7 @@ func commit(repeat: bool = false) -> bool:
 	site.model_name = DEFINITIONS[building_id].model
 	site.yaw = pose.yaw
 	site.shape = shape
+	if building_id in [&"sawmill",&"warehouse",&"house"]: site.construction_stage=1
 	add_child(site)
 	site.position = Vector3(pose.center.x,.02,pose.center.y)
 	sites.append(site)
@@ -257,6 +264,10 @@ func commit(repeat: bool = false) -> bool:
 	world.hud.minimap.set_landmark(site.get_instance_id(),site.global_position,"building",world.local_team_id,[world.local_team_id])
 	world.rts.grid_overlay.refresh()
 	world.weather.refresh_world(world.map_renderer.get_half_extent())
+	if site.stage!=&"completed":
+		var builders: Array = world.rts.selected.duplicate()
+		if builders.is_empty(): builders=[world.lead_unit]
+		world.rts.orders.gathering.start_build(builders,site)
 	if repeat: refresh_preview()
 	else: cancel()
 	return true

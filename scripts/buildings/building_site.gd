@@ -8,6 +8,8 @@ var stage: StringName = &"completed"
 var model_anchor: Node3D
 var model_name := "sawmill"
 var construction_stage := 5
+var construction_work := 0.0
+const CONSTRUCTION_SECONDS := 32.0
 var yaw := 0.0
 var shape := PackedVector2Array()
 var connections: Array[Dictionary] = []
