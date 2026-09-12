@@ -66,6 +66,7 @@ func clamp_to_screen() -> void:
 	super.clamp_to_screen()
 
 func open() -> void:
+	if not world.formation_features_enabled: return
 	if not positioned:
 		position = Vector2(maxf(10,world.hud.skill_slots.position.x),world.hud.skill_slots.position.y-size.y-12)
 		positioned = true

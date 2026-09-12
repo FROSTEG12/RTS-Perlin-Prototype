@@ -84,6 +84,7 @@ func fit_width(available: float) -> Vector2:
 	return Vector2(side * 6 + SLOT_GAP * 6 + 12 + inventory_width, side + 20)
 
 func request_slot(index: int) -> void:
+	if not is_visible_in_tree(): return
 	slots[index].button_pressed = not slots[index].button_pressed
 
 func _on_slot_toggled(active: bool, index: int) -> void:
@@ -139,6 +140,7 @@ func sync_active() -> void:
 			if library.bindings[i].is_empty(): slots[i].set_pressed_no_signal(false)
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if not is_visible_in_tree(): return
 	if get_tree().paused: return
 	var world = get_parent().world
 	if world.placement != null and world.placement.active: return

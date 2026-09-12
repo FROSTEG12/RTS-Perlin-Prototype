@@ -1,5 +1,10 @@
 extends Node3D
 
+# Temporary playtest switches; original squad/UI systems remain available.
+@export var formation_features_enabled := false
+@export var start_with_single_unit := true
+@export var fog_of_war_enabled_at_start := false
+
 const FORMATION := preload("res://scripts/units/squad_formation.gd")
 const SQUAD_SIZE := FORMATION.SIZE
 const DEFAULT_MAP_SIZE := 104
@@ -57,6 +62,7 @@ func _ready() -> void:
 	vision = preload("res://scripts/world/map_visibility.gd").new()
 	vision.name = "MapVisibility"
 	vision.world = self
+	vision.enabled = fog_of_war_enabled_at_start
 	add_child(vision)
 	developer_tools = preload("res://scripts/ui/developer_tools.gd").new()
 	developer_tools.name = "DeveloperTools"
@@ -239,9 +245,10 @@ func _on_new_map_pressed() -> void:
 
 func _setup_rts_controls() -> void:
 	lead_unit.squad_id = 1
+	lead_unit.individual_control = start_with_single_unit
 	player_units.append(lead_unit)
 	var scene := preload("res://scenes/units/knight.tscn")
-	for index in range(SQUAD_SIZE - 1):
+	for index in range(0 if start_with_single_unit else SQUAD_SIZE - 1):
 		var unit := scene.instantiate() as Unit3D
 		unit.name = "Worker_%d" % (index + 2)
 		unit.display_name = "Синий рыцарь №%d" % (index + 2)

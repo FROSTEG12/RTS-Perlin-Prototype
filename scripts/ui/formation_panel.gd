@@ -102,6 +102,7 @@ func make_button(text: String, parent: Node, action: Callable) -> Button:
 	return result
 
 func open() -> void:
+	if not world.formation_features_enabled: return
 	if not editing: edit_template({})
 	else:
 		show()

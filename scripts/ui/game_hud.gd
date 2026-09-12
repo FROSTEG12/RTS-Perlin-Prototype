@@ -156,6 +156,8 @@ func _ready() -> void:
 	dock.name = "CommandDock"
 	add_child(dock)
 	navigation_buttons = dock.buttons
+	navigation_buttons[2].visible = world.formation_features_enabled
+	skill_slots.visible = world.formation_features_enabled
 	dock.section_requested.connect(_open_section)
 	buildings = preload("res://scripts/ui/building_browser.gd").new()
 	buildings.name = "BuildingBrowser"
@@ -228,7 +230,7 @@ func _layout_hud() -> void:
 	_place(skill_slots, Vector2(dock.position.x - skill_gap - skill_extent.x, size.y - 6 - skill_extent.y), skill_extent)
 	# Panels grow upwards from one baseline. On narrow screens only the panel
 	# shifts left to avoid the map; the three entry buttons stay screen-centred.
-	var panel_bottom := minf(dock.position.y, skill_slots.position.y) - 6.0
+	var panel_bottom := (minf(dock.position.y, skill_slots.position.y) if skill_slots.visible else dock.position.y) - 6.0
 	var panel_right := minimap.position.x - GAP
 	var browser_width := minf(480.0, panel_right - EDGE)
 	var browser_height := buildings.get_combined_minimum_size().y
@@ -266,12 +268,14 @@ func _section_panel(title: String) -> PanelContainer:
 	return section
 
 func _open_section(index: int) -> void:
+	if index == 2 and not world.formation_features_enabled: return
 	if index == 2:
 		formation_panel.open()
 		return
 	_set_section(-1 if active_section == index else index)
 
 func _set_section(index: int) -> void:
+	if index == 2 and not world.formation_features_enabled: return
 	if world.placement != null: world.placement.cancel()
 	if index == 2:
 		formation_panel.open()
@@ -283,6 +287,7 @@ func _set_section(index: int) -> void:
 	_schedule_layout()
 
 func open_inventory() -> void:
+	if not world.formation_features_enabled: return
 	formation_inventory.open()
 
 func _process(delta: float) -> void:
